@@ -548,37 +548,48 @@ function FicCard({ db, i, onTag, onFolder }) {
   const [cur, setCur] = useState(i);
   const [open, setOpen] = useState(false);
   useEffect(() => setCur(i), [i]);
-  const extra = group ? <CopiesBar db={db} group={group} cur={cur} open={open} setOpen={setOpen} onPick={setCur} onFolder={onFolder} /> : null;
+  const extra = group ? <CopiesBar db={db} group={group} cur={cur} open={open} setOpen={setOpen} onPick={setCur} /> : null;
   return <FicView db={db} i={cur} onTag={onTag} onFolder={onFolder} extra={extra} />;
 }
 
-function CopiesBar({ db, group, cur, open, setOpen, onPick, onFolder }) {
+function CopiesBar({ db, group, cur, open, setOpen, onPick }) {
   const places = group.flat().length;
-  const versions = group.length;
-  const label =
-    versions > 1
-      ? `${versions} versions of this fic · ${places} copies`
+  // A copy with no fingerprint yet can't be called identical or different: "not compared yet".
+  const pending = group.filter((v) => db.unchecked.has(v[0])).length;
+  const compared = group.length - pending;
+  const noun = pending ? 'Copy' : 'Version';
+  const label = pending
+    ? `${places} copies of this fic${compared > 1 ? ` · ${compared} different versions` : ''} · ${pending} not compared yet`
+    : compared > 1
+      ? `${compared} versions of this fic · ${places} copies`
       : `Identical copy in ${places} places`;
   const curVersion = group.findIndex((v) => v.includes(cur));
   return (
     <div className={`copies ${open ? 'open' : ''}`}>
       <button className="copies-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span aria-hidden>⧉</span> {label}
-        {versions > 1 && <span className="copies-now"> · showing version {curVersion + 1}</span>}
+        {group.length > 1 && (
+          <span className="copies-now">
+            {' '}
+            · showing {noun.toLowerCase()} {curVersion + 1}
+          </span>
+        )}
         <span className="copies-chev" aria-hidden>
           {open ? '▴' : '▾'}
         </span>
       </button>
       {open && (
         <div className="copies-body">
-          {versions > 1 && (
+          {group.length > 1 && (
             <p className="copies-help">
-              These files are not identical, so they are kept apart. Version 1 is the most complete one. Pick the one you want:
+              {pending
+                ? "Some copies haven't been compared yet: they're checked a few thousand at a time, so this fills in over the next hours. They may turn out to be identical to another copy. Copy 1 is the most complete one. Pick the one you want:"
+                : 'These files are not identical, so they are kept apart. Version 1 is the most complete one. Pick the one you want:'}
             </p>
           )}
           <ol className="versions">
             {group.map((places, vi) => (
-              <VersionRow key={vi} db={db} n={vi + 1} places={places} multi={versions > 1} current={vi === curVersion} onPick={() => onPick(places[0])} onFolder={onFolder} />
+              <VersionRow key={vi} db={db} n={vi + 1} noun={noun} places={places} multi={group.length > 1} pending={db.unchecked.has(places[0])} current={vi === curVersion} onPick={() => onPick(places[0])} />
             ))}
           </ol>
         </div>
@@ -587,7 +598,7 @@ function CopiesBar({ db, group, cur, open, setOpen, onPick, onFolder }) {
   );
 }
 
-function VersionRow({ db, n, places, multi, current, onPick }) {
+function VersionRow({ db, n, noun, places, multi, pending, current, onPick }) {
   const rep = places[0];
   const d = useDetailsFor(db, rep);
   const bits = [
@@ -604,8 +615,11 @@ function VersionRow({ db, n, places, multi, current, onPick }) {
         <label className="version-head">
           <input type="radio" name={`ver-${rep}`} checked={current} onChange={onPick} />
           <span>
-            <strong>Version {n}</strong>
+            <strong>
+              {noun} {n}
+            </strong>
             {n === 1 && <span className="suggested">suggested</span>}
+            {pending && <span className="pending" title="Not compared with the other copies yet">not compared yet</span>}
             <span className="version-bits">{bits.join(' · ')}</span>
           </span>
         </label>
@@ -958,7 +972,8 @@ function About() {
         <li>
           The same fic often sits in several drives. Copies are grouped into one result: open “versions of this fic” to
           see them all and pick one. Identical files count as one version with several places. If there's any
-          difference in the text, they stay separate versions (the most complete is suggested). Fics by different
+          difference in the text, they stay separate versions (the most complete is suggested). Copies whose text
+          hasn't been compared yet are marked as such. Fics by different
           authors are never grouped, even with the same title, and a copy whose author can't be read isn't grouped
           unless its text or AO3 work id matches.
         </li>

@@ -155,6 +155,9 @@ function buildIndex(listing, fics, cache) {
     };
   });
   const groups = groupFics(items);
+  // Copies without a fingerprint can't be told apart from an identical one yet: the site shows
+  // them as "not compared yet" rather than as different versions.
+  const unchecked = groups.flat(2).filter((e) => !items[e].h);
 
   const tagCount = new Map();
   const ficKeys = metas.map((m) => {
@@ -236,6 +239,7 @@ function buildIndex(listing, fics, cache) {
     // groups[g] = versions of one fic, best first; a version = the places holding that
     // exact document (fic ids). Fics not listed here have no other copy.
     groups,
+    unchecked,
     chunk: CHUNK,
     sources: listing.sources,
     folders,
@@ -319,7 +323,7 @@ async function main() {
   const inGroups = index.groups.reduce((n, g) => n + g.flat().length, 0);
   const versions = index.groups.reduce((n, g) => n + g.length, 0);
   console.log(`Tagged ${index.tagged}/${fics.length} fics with ${index.tags.length} distinct tags; ${chunks.length} detail chunks`);
-  console.log(`${index.groups.length} fics exist in several places (${inGroups} copies, ${versions} distinct versions)`);
+  console.log(`${index.groups.length} fics exist in several places (${inGroups} copies, ${versions} versions; ${index.unchecked.length} copies not compared yet)`);
 }
 
 main().catch((err) => {

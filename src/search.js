@@ -40,7 +40,7 @@ export const tagKey = (db, id) => `${db.tags[id][0]}:${db.tags[id][1]}`;
 export function prepare(index) {
   // v2 (no groups of copies) is still readable; anything else is refused.
   if (index.v !== 3 && index.v !== 2) throw new Error('This index was built by another version of the site and will be replaced shortly.');
-  index = { ...index, groups: index.groups || [] };
+  index = { ...index, groups: index.groups || [], unchecked: index.unchecked || [] };
   const n = index.count;
   // Copies of the same fic: groups[g] = versions (best first), each a list of places holding
   // that exact document. rank = position of a copy inside its group, best first.
@@ -58,6 +58,7 @@ export function prepare(index) {
     n,
     gOf,
     rank,
+    unchecked: new Set(index.unchecked),
     ficTags,
     tagIdByKey,
     nTitle: index.t.map(norm),
