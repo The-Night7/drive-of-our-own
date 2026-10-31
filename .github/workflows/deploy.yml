@@ -1,16 +1,23 @@
-name: Deploy to GitHub Pages
+name: Index & deploy
+
+# Runs on its own: every 6 hours, on every push to main, and when a drive is
+# added through the site's form. Each run:
+#   1. finds the drives (master Drive folder + data/sources.json),
+#   2. re-lists every drive once a day (in between, only newly added drives),
+#   3. downloads new fics and extracts their AO3 tags (cached between runs),
+#   4. builds the site and publishes it on GitHub Pages.
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: '17 4 * * *' # re-crawl the drives every day
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
-      crawl:
-        description: 'Re-crawl the drives before building'
+      full_crawl:
+        description: 'Re-list every drive now (otherwise once a day)'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -18,24 +25,66 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: index
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - name: Crawl drives
-        if: github.event_name == 'schedule' || inputs.crawl
-        run: npm run crawl
+
+      - name: Install pdftotext
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
+      # The drive listing and the per-file tag cache live in the Actions cache,
+      # so each run only does the work that's new.
+      - name: Restore index cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/listing.json
+            data/meta-cache
+          key: index-${{ github.run_id }}
+          restore-keys: index-
+
+      - name: Find and list drives
+        env:
+          FULL: ${{ inputs.full_crawl }}
+        run: |
+          if [ "$FULL" = "true" ]; then
+            node scripts/crawl.mjs --max-minutes 120
+          else
+            node scripts/crawl.mjs --max-minutes 120 --if-older-than-hours 20
+          fi
+
+      - name: Extract tags and build the index
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # Pushes only need a quick rebuild; scheduled runs chew through the backlog.
+          if [ "$EVENT" = "push" ]; then MIN=15; else MIN=170; fi
+          node scripts/build-index.mjs --max-minutes $MIN --concurrency 8
+
+      - name: Save index cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/listing.json
+            data/meta-cache
+          key: index-${{ github.run_id }}
+
       - run: npm run build
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

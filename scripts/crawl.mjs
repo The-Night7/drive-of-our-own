@@ -1,96 +1,130 @@
 #!/usr/bin/env node
-// Crawls the public Google Drive folders listed in data/sources.json and
-// writes a search index to public/index.json.
+// Step 1 of the index build: find the drives and list every fic in them.
 //
-// It uses Drive's public "embedded folder view" page, so no API key or login
-// is needed — but only folders shared as "Anyone with the link" can be read.
+// Drives come from three places, merged and de-duplicated:
+//   1. the "master" Drive folder in data/config.json: every folder shortcut in it,
+//      plus every Drive-folder link written in a Google Doc inside it;
+//   2. data/sources.json (manual entries and drives added through the site's form).
+// Then every drive (and all of its subfolders) is read through Drive's public
+// folder view (no API key, no login) and written to data/listing.json
+// (scripts/build-index.mjs then adds tags and writes what the site loads).
 //
-// Usage: node scripts/crawl.mjs [--only <folderId>] [--concurrency 4]
+// Usage: node scripts/crawl.mjs [--max-minutes 150] [--concurrency 8] [--only <folderId>] [--dry-run]
+//                              [--if-older-than-hours 20]   (skip if the listing is fresher than that)
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listFolder, readDocBlocks, folderIdFromUrl, fileIdFromUrl } from './lib/drive.mjs';
+import { compact, expand } from './lib/index-format.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const CONFIG = resolve(ROOT, 'data/config.json');
 const SOURCES = resolve(ROOT, 'data/sources.json');
-const OUT = resolve(ROOT, 'public/index.json');
+const OUT = resolve(ROOT, 'data/listing.json');
 
 const args = process.argv.slice(2);
-const argVal = (name, def) => {
+const arg = (name, def) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : def;
 };
-const ONLY = argVal('--only', null);
-const CONCURRENCY = Number(argVal('--concurrency', 4));
-const MAX_DEPTH = 12;
 
-// File extensions we treat as "a fic". Everything else (images, zips…) is skipped.
 const FIC_EXT = new Set(['pdf', 'epub', 'mobi', 'azw3', 'azw', 'docx', 'doc', 'txt', 'html', 'htm', 'rtf', 'odt', 'fb2']);
-const GOOGLE_DOC = 'gdoc';
+const MAX_DEPTH = 15;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// ---------- discovery ----------
 
-function folderIdFromUrl(url) {
-  const m = url.match(/\/folders\/([\w-]+)/);
-  return m ? m[1] : null;
+const HANDLE = /@[A-Za-z0-9_.]{2,30}/;
+
+function sourceFromBlock(text, url, context) {
+  // Typical lines: "@handle (fandoms…) : lien", "AO3 Library : <link>", "Russtappen : <link>"
+  const before = text.split(/\s:\s|\s:$/)[0].replace(/https?:\/\/\S+/g, '').trim();
+  const handles = before.match(new RegExp(HANDLE.source, 'g'));
+  const credit = handles ? [...new Set(handles)].join(' & ') : context.handle;
+  const paren = before.match(/\(([^)]+)\)/);
+  const notes = (paren ? paren[1] : before.replace(new RegExp(HANDLE.source, 'g'), ''))
+    .replace(/^[\s,;:&()-]+|[\s,;:&()-]+$/g, '')
+    .replace(/\(?\s*drive link\s*\)?/gi, '')
+    .replace(/\bby\s*:?\s*$/i, '')
+    .replace(/^(et|and)\s+/i, '')
+    .replace(/[\s,;:&(-]+$/g, '')
+    .trim();
+  return { url, credit, notes: notes === before && handles ? '' : notes };
 }
 
-const decode = (s) =>
-  s
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
-
-async function fetchFolder(id) {
-  const url = `https://drive.google.com/embeddedfolderview?id=${id}`;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (drive-of-our-own indexer)' } });
-      if (res.status === 404) return null;
-      if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
-      if (!res.ok) return null;
-      return await res.text();
-    } catch (err) {
-      const wait = 1000 * 2 ** attempt;
-      console.warn(`  ! ${id}: ${err.message}, retrying in ${wait / 1000}s`);
-      await sleep(wait);
+// Collects Drive-folder (and Google Sheet) links from a Google Doc. With depth > 0 it
+// also follows Google Docs linked from it (e.g. a community masterpost).
+async function readDoc(docId, name, found, depth, seenDocs) {
+  if (!docId || seenDocs.has(docId)) return;
+  seenDocs.add(docId);
+  const blocks = await readDocBlocks(docId);
+  if (!blocks) {
+    console.warn(`! could not read doc "${name}" (not public?)`);
+    return;
+  }
+  let n = 0;
+  const ctx = { handle: '' };
+  const linkedDocs = [];
+  for (const b of blocks) {
+    if (/^h/.test(b.tag)) {
+      // A heading like "@LukeTraveler (200 first fics)" gives credit to the links under it.
+      ctx.handle = (b.text.match(HANDLE) || [''])[0];
+      continue;
+    }
+    for (const link of b.links) {
+      const folderId = /drive\.google\.com/.test(link) ? folderIdFromUrl(link) : null;
+      if (folderId) {
+        found.push({ ...sourceFromBlock(b.text, `https://drive.google.com/drive/folders/${folderId}`, ctx), origin: `doc:${name}` });
+        n++;
+      } else if (/docs\.google\.com\/spreadsheets\/d\//.test(link)) {
+        found.push({ ...sourceFromBlock(b.text, link.split('#')[0], ctx), kind: 'external', origin: `doc:${name}` });
+        n++;
+      } else if (/docs\.google\.com\/document\/d\//.test(link)) {
+        linkedDocs.push({ id: fileIdFromUrl(link), name: b.text.slice(0, 60) });
+      }
     }
   }
-  return null;
+  console.log(`  doc "${name}": ${n} drive links`);
+  if (depth > 0) for (const d of linkedDocs) await readDoc(d.id, d.name, found, depth - 1, seenDocs);
 }
 
-function parseFolder(html) {
-  const title = decode((html.match(/<title>([^<]*)<\/title>/) || [])[1] || '').trim();
-  const entries = [];
-  // Parse each entry on its own so one odd entry can't swallow its neighbours.
-  const chunks = html.split('<div class="flip-entry" id="entry-').slice(1);
-  for (const chunk of chunks) {
-    const id = (chunk.match(/^([\w-]+)"/) || [])[1];
-    const href = (chunk.match(/<a href="([^"]+)"/) || [])[1];
-    const rawTitle = (chunk.match(/<div class="flip-entry-title">([^<]*)<\/div>/) || [])[1];
-    if (!id || !href || rawTitle == null) continue;
-    const listIcon = chunk.match(/<div class="flip-entry-list-icon">([\s\S]*?)<\/div>/)?.[1] || '';
-    const icon = (listIcon.match(/src="([^"]*)"/) || [])[1] || listIcon;
-    const modified = (chunk.match(/<div class="flip-entry-last-modified"><div>([^<]*)<\/div>/) || [])[1] || '';
-    const isFolder = /\/folders\//.test(href) || /aria-label="Folder"|folder-(grid|list)/.test(chunk);
-    entries.push({ id, href: decode(href), icon, name: decode(rawTitle).trim(), modified: decode(modified).trim(), isFolder });
+async function discover(config) {
+  const found = [];
+  const masterId = folderIdFromUrl(config.masterFolder || '');
+  if (!masterId) return found;
+  const master = await listFolder(masterId);
+  if (master.status !== 200) {
+    console.warn(`! master folder not readable (HTTP ${master.status}) — is it shared as "anyone with the link"?`);
+    return found;
   }
-  return { title, entries };
+  console.log(`Master folder "${master.title}": ${master.entries.length} entries`);
+  const seenDocs = new Set();
+  for (const e of master.entries) {
+    if (e.isFolder) {
+      found.push({ url: `https://drive.google.com/drive/folders/${folderIdFromUrl(e.href) || e.id}`, name: e.name, credit: '', notes: '', origin: 'shortcut' });
+    } else if (/docs\.google\.com\/document\//.test(e.href)) {
+      await readDoc(fileIdFromUrl(e.href), e.name, found, config.followLinkedDocs !== false ? 1 : 0, seenDocs);
+    }
+  }
+  return found;
 }
 
-function fileKind(entry) {
-  const ext = (entry.name.match(/\.([a-z0-9]{2,5})$/i) || [])[1]?.toLowerCase();
-  if (ext && FIC_EXT.has(ext)) return ext;
-  if (/document/.test(entry.icon) && /docs\.google\.com\/document/.test(entry.href)) return GOOGLE_DOC;
-  return null;
+function mergeSources(lists) {
+  const byKey = new Map();
+  for (const s of lists.flat()) {
+    const key = folderIdFromUrl(s.url) || fileIdFromUrl(s.url) || s.url;
+    const prev = byKey.get(key);
+    if (!prev) byKey.set(key, { ...s });
+    else {
+      // Earlier lists win, later ones only fill the gaps.
+      for (const k of ['name', 'credit', 'notes', 'kind']) if (!prev[k] && s[k]) prev[k] = s[k];
+    }
+  }
+  return [...byKey.values()];
 }
 
-// "Bask_in_the_glory_of_all.epub" -> "Bask in the glory of all"
-// "acrodite - futile devices_84760991.epub" -> title "acrodite - futile devices", ao3 id 84760991
+// ---------- crawl ----------
+
 function cleanName(name) {
   let base = name.replace(/\.[a-z0-9]{2,5}$/i, '');
   let ao3Id = null;
@@ -99,151 +133,173 @@ function cleanName(name) {
     ao3Id = idMatch[1];
     base = base.slice(0, -idMatch[0].length);
   }
-  const title = base.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-  return { title, ao3Id };
+  return { title: base.replace(/_/g, ' ').replace(/\s+/g, ' ').trim(), ao3Id };
 }
 
-const groupKey = (title) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-
-function fileUrl(entry) {
-  return entry.href.replace(/[?&]usp=drive_web$/, '');
+function fileKind(entry) {
+  const ext = (entry.name.match(/\.([a-z0-9]{2,5})$/i) || [])[1]?.toLowerCase();
+  if (ext && FIC_EXT.has(ext)) return ext;
+  if (/docs\.google\.com\/document/.test(entry.href)) return 'gdoc';
+  return null;
 }
 
-async function crawlSource(source, seenFolders) {
-  const rootId = folderIdFromUrl(source.url);
-  const fics = [];
-  let folderCount = 0;
-  let rootTitle = null;
-  const queue = [{ id: rootId, path: [], depth: 0 }];
+const groupKey = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+async function crawlAll(sources, { concurrency, deadline }) {
+  const seen = new Set();
+  const state = sources.map(() => ({ fics: [], folders: 0, pending: 0, rootTitle: null, status: null }));
+  const queue = [];
+  sources.forEach((s, i) => {
+    const id = folderIdFromUrl(s.url);
+    if (id && s.kind !== 'external' && !s.skip) {
+      queue.push({ id, path: [], depth: 0, s: i });
+      state[i].pending++;
+    }
+  });
+
   let active = 0;
+  let done = 0;
+  let timedOut = false;
+  const started = Date.now();
 
-  await new Promise((done) => {
-    const pump = () => {
-      if (!queue.length && !active) return done();
-      while (active < CONCURRENCY && queue.length) {
+  await new Promise((finish) => {
+    const tick = () => {
+      if (Date.now() > deadline && !timedOut) {
+        timedOut = true;
+        console.warn('\n! time budget reached — unfinished drives keep their previous data');
+      }
+      while (!timedOut && active < concurrency && queue.length) {
         const job = queue.shift();
-        if (seenFolders.has(job.id)) continue;
-        seenFolders.add(job.id);
+        const st = state[job.s];
+        if (seen.has(job.id)) {
+          st.pending--;
+          continue;
+        }
+        seen.add(job.id);
         active++;
-        fetchFolder(job.id)
-          .then((html) => {
-            if (!html) return;
-            folderCount++;
-            const { title, entries } = parseFolder(html);
-            if (job.depth === 0) rootTitle = title;
+        listFolder(job.id)
+          .then(({ status, title, entries }) => {
+            if (job.depth === 0) {
+              st.status = status;
+              st.rootTitle = title;
+            }
+            if (status !== 200) return;
+            st.folders++;
             const groups = new Map();
             for (const e of entries) {
               if (e.isFolder) {
-                const sub = folderIdFromUrl(e.href) || e.id;
-                if (job.depth < MAX_DEPTH) queue.push({ id: sub, path: [...job.path, e.name], depth: job.depth + 1 });
+                if (job.depth < MAX_DEPTH) {
+                  queue.push({ id: folderIdFromUrl(e.href) || e.id, path: [...job.path, e.name], depth: job.depth + 1, s: job.s });
+                  st.pending++;
+                }
                 continue;
               }
               const kind = fileKind(e);
               if (!kind) continue;
-              const { title: t, ao3Id } = cleanName(e.name);
-              const key = groupKey(t) || e.id;
-              if (!groups.has(key)) groups.set(key, { title: t, ao3Id, files: [], modified: e.modified });
+              const fileId = fileIdFromUrl(e.href) || e.id;
+              const { title, ao3Id } = cleanName(e.name);
+              const key = groupKey(title) || fileId;
+              if (!groups.has(key)) groups.set(key, { title, ao3Id, files: [], modified: e.modified });
               const g = groups.get(key);
               g.ao3Id ||= ao3Id;
-              g.files.push({ f: kind, u: fileUrl(e) });
+              if (!g.files.some((f) => f[1] === fileId)) g.files.push([kind, fileId]);
             }
             for (const g of groups.values()) {
-              fics.push({
-                t: g.title,
-                p: job.path,
-                fo: `https://drive.google.com/drive/folders/${job.id}`,
-                fl: g.files,
-                ...(g.ao3Id ? { a: g.ao3Id } : {}),
-                m: g.modified,
-              });
+              st.fics.push({ t: g.title, s: job.s, p: job.path, fo: job.id, fl: g.files, ...(g.ao3Id ? { a: g.ao3Id } : {}), m: g.modified });
             }
-            process.stdout.write(`\r  ${source.credit}: ${folderCount} folders, ${fics.length} fics   `);
           })
-          .catch((err) => console.warn(`\n  ! ${job.id}: ${err.message}`))
+          .catch((err) => {
+            st.error = true;
+            console.warn(`\n! folder ${job.id}: ${err.message}`);
+          })
           .finally(() => {
             active--;
-            pump();
+            st.pending--;
+            done++;
+            if (done % 50 === 0) {
+              const fics = state.reduce((n, x) => n + x.fics.length, 0);
+              process.stdout.write(`\r  ${done} folders read, ${queue.length} queued, ${fics} fics, ${Math.round((Date.now() - started) / 1000)}s   `);
+            }
+            tick();
           });
       }
-      if (!queue.length && !active) done();
+      if (active === 0 && (timedOut || !queue.length)) finish();
     };
-    pump();
+    tick();
   });
   process.stdout.write('\n');
-  return { rootTitle, fics, folderCount };
-}
-
-// On disk, folder paths are stored once in a table and fics point at them
-// (index.json is much smaller that way). In memory we use the flat shape.
-function compact(fics) {
-  const folders = [];
-  const byUrl = new Map();
-  const out = fics.map((f) => {
-    let k = byUrl.get(f.fo);
-    if (k === undefined) {
-      k = folders.length;
-      byUrl.set(f.fo, k);
-      folders.push({ s: f.s, id: f.fo.split('/').pop(), p: f.p });
-    }
-    const { fo, p, s, ...rest } = f;
-    return { ...rest, d: k };
-  });
-  return { folders, fics: out };
-}
-
-function expand(index) {
-  if (!index.folders) return index.fics;
-  return index.fics.map(({ d, ...f }) => {
-    const dir = index.folders[d];
-    return { ...f, s: dir.s, p: dir.p, fo: `https://drive.google.com/drive/folders/${dir.id}` };
-  });
+  return state;
 }
 
 async function main() {
-  const sources = JSON.parse(await readFile(SOURCES, 'utf8'));
+  const config = JSON.parse(await readFile(CONFIG, 'utf8'));
+  const manual = JSON.parse(await readFile(SOURCES, 'utf8')).map((s) => ({ ...s, origin: s.origin || 'sources.json' }));
+  const maxMinutes = Number(arg('--max-minutes', config.maxMinutes || 300));
+  const concurrency = Number(arg('--concurrency', config.concurrency || 8));
+  const deadline = Date.now() + maxMinutes * 60000;
+
   let previous = null;
   try {
     previous = JSON.parse(await readFile(OUT, 'utf8'));
   } catch {}
-
-  const seenFolders = new Set();
-  const outSources = [];
-  const outFics = [];
-
-  for (const [i, source] of sources.entries()) {
-    const id = folderIdFromUrl(source.url);
-    const base = { id: i, url: source.url, credit: source.credit, notes: source.notes || '' };
-    if (!id) {
-      // Not a Drive folder (e.g. a Google Sheet): list it as a source, nothing to crawl.
-      outSources.push({ ...base, name: source.name || source.notes || 'External source', kind: 'external', count: 0 });
-      continue;
-    }
-    if (ONLY && ONLY !== id) {
-      // Keep previously crawled data for sources we're skipping this run.
-      const prev = previous?.sources.find((s) => s.url === source.url);
-      if (prev) {
-        outSources.push({ ...prev, ...base });
-        outFics.push(...expand(previous).filter((f) => f.s === prev.id).map((f) => ({ ...f, s: i })));
-      } else outSources.push({ ...base, name: source.notes || source.credit, kind: 'drive', count: 0 });
-      continue;
-    }
-    console.log(`→ ${source.credit} (${source.notes || id})`);
-    const { rootTitle, fics, folderCount } = await crawlSource(source, seenFolders);
-    outSources.push({
-      ...base,
-      name: source.name || rootTitle || source.notes || source.credit,
-      kind: 'drive',
-      count: fics.length,
-      folders: folderCount,
-      ok: folderCount > 0,
-    });
-    for (const f of fics) outFics.push({ ...f, s: i });
+  const prevFics = previous ? expand(previous) : [];
+  const discovered = await discover(config);
+  const sources = mergeSources([manual, discovered]);
+  console.log(`${sources.length} sources (${manual.length} in sources.json, ${discovered.length} found in the master folder)`);
+  if (args.includes('--dry-run')) {
+    for (const s of sources) console.log(`${s.kind === 'external' ? 'EXT  ' : 'DRIVE'} ${s.credit || '-'} | ${s.name || s.notes || ''} | ${s.url} [${s.origin}]`);
+    return;
   }
 
+  // Which drives to (re)crawl: all of them, one (--only), or — when the listing is
+  // still fresh — just the drives that were added since the last crawl.
+  let only = arg('--only', null) ? new Set([arg('--only')]) : null;
+  const fresh = Number(arg('--if-older-than-hours', 0));
+  if (!only && fresh && previous && Date.now() - new Date(previous.generated).getTime() < fresh * 3600000) {
+    const known = new Set(previous.sources.map((s) => s.url));
+    const added = sources.filter((s) => !known.has(s.url) && folderIdFromUrl(s.url) && s.kind !== 'external');
+    if (!added.length && sources.length === previous.sources.length) {
+      console.log(`Listing is from ${previous.generated} (< ${fresh} h) and no drive was added — nothing to crawl.`);
+      return;
+    }
+    only = new Set(added.map((s) => folderIdFromUrl(s.url)));
+    console.log(`Listing is fresh; crawling only the ${only.size} new drive(s).`);
+  }
+  if (only) sources.forEach((s) => (s.skip = !only.has(folderIdFromUrl(s.url))));
+  const state = await crawlAll(sources, { concurrency, deadline });
+
+  const outSources = [];
+  const outFics = [];
+  sources.forEach((s, i) => {
+    const st = state[i];
+    const isDrive = !!folderIdFromUrl(s.url) && s.kind !== 'external';
+    const prevSrc = previous?.sources.find((p) => p.url === s.url);
+    const prevList = prevSrc ? prevFics.filter((f) => f.s === prevSrc.id) : [];
+    const incomplete = s.skip || st.pending > 0 || st.error;
+    // Keep the old listing when this run couldn't finish the drive and the old one was bigger.
+    const usePrev = isDrive && incomplete && prevList.length > st.fics.length;
+    const fics = usePrev ? prevList : st.fics;
+    outSources.push({
+      id: i,
+      url: s.url,
+      name: s.name || st.rootTitle || prevSrc?.name || s.notes || s.credit || 'Drive',
+      credit: s.credit || '',
+      notes: s.notes || '',
+      kind: isDrive ? 'drive' : 'external',
+      count: fics.length,
+      ...(isDrive ? { status: st.status ?? prevSrc?.status ?? null } : {}),
+      ...(incomplete && isDrive && !s.skip ? { partial: true } : {}),
+      origin: s.origin,
+    });
+    for (const f of fics) outFics.push({ ...f, s: i });
+  });
+
   await mkdir(dirname(OUT), { recursive: true });
-  const index = { generated: new Date().toISOString(), sources: outSources, ...compact(outFics) };
+  const partialRun = sources.some((s) => s.skip);
+  const index = { generated: partialRun && previous ? previous.generated : new Date().toISOString(), sources: outSources, ...compact(outFics) };
   await writeFile(OUT, JSON.stringify(index));
-  console.log(`\nWrote ${outFics.length} fics from ${outSources.length} sources to ${OUT}`);
+  const blocked = outSources.filter((s) => s.kind === 'drive' && s.status && s.status !== 200).length;
+  console.log(`Wrote ${outFics.length} fics from ${outSources.length} sources (${blocked} not public) to ${OUT}`);
 }
 
 main().catch((err) => {

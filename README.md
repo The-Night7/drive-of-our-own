@@ -1,23 +1,55 @@
 # Drive of Our Own
 
-A little search engine for the fanfics people have been saving to Google Drive
-since AO3 went down. It indexes the community drives I know about, then lets you
-search every fic by title, fandom, ship or folder, and links **straight to the
-file in its original drive**. Nothing is copied or re-hosted.
+A search engine for the fanfics people have been saving to Google Drive since AO3
+went down. It indexes the community drives, reads each fic's AO3 tags, and lets you
+search by title, author, fandom, ship, character or any tag. Every result links
+**straight to the file in its original drive**. Nothing is copied or re-hosted.
 
-Built with React and Vite. The search runs entirely in the browser.
+React + Vite, hosted on GitHub Pages. Search runs entirely in the browser.
 
-## How it works
+## Everything runs on its own
 
-1. `data/sources.json` lists the drives, with credit to whoever shared them.
-2. `npm run crawl` (`scripts/crawl.mjs`) goes through each public folder and its
-   subfolders through Drive's public folder view (no API key or login needed). It
-   writes `public/index.json` with every fic's title, folder path and file links.
-   An `.epub` and a `.pdf` with the same name count as one fic with two formats.
-3. The React app loads `index.json` and searches it on the client.
+A GitHub Actions workflow ([`deploy.yml`](.github/workflows/deploy.yml)) runs every
+6 hours, on every push and whenever a drive is added. Nobody has to do anything:
 
-Drives that aren't shared as "Anyone with the link" can't be crawled. They still
-show up on the **Drives** page, marked *Not public*.
+1. **Finds the drives.** It reads the master Drive folder set in
+   [`data/config.json`](data/config.json) (“AO3 - Drives”):
+   - every **shortcut to a folder** in it;
+   - every **Drive folder link written in a Google Doc** in it, plus Google Docs
+     linked from those docs (one level, e.g. a community masterpost). The `@handle`
+     and the text in brackets on the same line become the credit and the description;
+   - plus anything in [`data/sources.json`](data/sources.json) (manual entries and
+     drives added through the site).
+2. **Lists every fic.** It goes through every drive and subfolder via Drive's
+   public folder view (no API key). This happens once a day; in between, only newly
+   added drives are listed.
+3. **Reads the tags.** It downloads each new EPUB (or the PDF when there's no EPUB)
+   once and reads the AO3 info page: rating, warnings, category, fandoms,
+   relationships, characters, additional tags, summary, author, word count,
+   chapters. Results are cached per file, so each run only reads new files. The
+   first pass over a big collection takes a few runs.
+4. **Publishes the site**, with an updated index.
+
+### Adding a drive
+
+Any of these works, and the drive shows up after the next run:
+
+- **Put a shortcut to it in the “AO3 - Drives” folder**, or paste its link into one
+  of the Google Docs in that folder.
+- **Use the site's “Add a drive” page.** It opens a pre-filled GitHub issue. The
+  [`add-drive`](.github/workflows/add-drive.yml) workflow checks that the folder is
+  public, adds it to `data/sources.json`, replies on the issue and starts an
+  indexing run. Issues from the repo owner are added immediately; anyone else's
+  wait until the owner adds the `approved` label.
+
+Folders must be shared as “Anyone with the link”. The ones that aren't show up
+as *Not public* on the Drives page.
+
+## One-time setup
+
+**Settings → Pages → Build and deployment → Source: GitHub Actions.** That's it.
+To start the first run right away instead of waiting for the schedule, go to
+**Actions → Index & deploy → Run workflow**.
 
 ## Run it locally
 
@@ -26,33 +58,35 @@ npm install
 ```
 
 ```bash
-npm run crawl
+npm run index
 ```
 
 ```bash
 npm run dev
 ```
 
-`npm run crawl -- --only <folderId>` re-crawls a single drive and keeps the
-others from the existing index.
+`npm run index` lists the drives (`scripts/crawl.mjs`), then downloads the fics and
+extracts their tags (`scripts/build-index.mjs`). The tag step needs `pdftotext`
+(`poppler-utils`) for PDFs. Useful flags:
 
-## Add a drive
+- `node scripts/crawl.mjs --dry-run` shows which drives were found and with what credit.
+- `node scripts/crawl.mjs --only <folderId>` re-lists a single drive.
+- `node scripts/build-index.mjs --limit 500` reads tags for at most 500 new files.
 
-Add an entry to `data/sources.json`:
+## Files
 
-```json
-{ "url": "https://drive.google.com/drive/folders/<id>", "credit": "@whoever", "notes": "what's in it" }
-```
+| Path | What it is |
+| --- | --- |
+| `data/config.json` | Master Drive folder and the repo name used by the “Add a drive” form |
+| `data/sources.json` | Extra drives (manual and added via the site) |
+| `scripts/crawl.mjs` | Finds the drives and lists the fics → `data/listing.json` |
+| `scripts/build-index.mjs` | Reads the tags → `public/index.json` + `public/details/*.json` |
+| `scripts/lib/meta.mjs` | The AO3 EPUB/PDF metadata parser |
+| `src/` | The React app |
 
-Then run `npm run crawl`. Links that aren't Drive folders, such as a Google Sheet,
-are listed on the Drives page but aren't crawled.
-
-## Deploy (GitHub Pages)
-
-`.github/workflows/deploy.yml` builds and deploys the site on every push to
-`main`, and re-crawls all drives once a day. To turn it on, go to
-**Settings → Pages → Build and deployment → Source: GitHub Actions**. To refresh
-the index by hand, run the workflow from the **Actions** tab.
+`public/index.json` holds what search needs, in columns (titles, tags, authors,
+word counts). File links and summaries are in small `public/details/<n>.json`
+chunks, which are loaded only for the fics on screen.
 
 ## Credit
 

@@ -5,7 +5,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "crawl": "node scripts/crawl.mjs"
+    "crawl": "node scripts/crawl.mjs",
+    "tags": "node scripts/build-index.mjs",
+    "index": "node scripts/crawl.mjs && node scripts/build-index.mjs"
   },
   "repository": {
     "type": "git",
@@ -16,12 +18,12 @@
   },
   "homepage": "https://github.com/The-Night7/drive-of-our-own#readme",
   "dependencies": {
-    "fuse.js": "^7.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",
+    "fflate": "^0.8.2",
     "vite": "^5.4.10"
   },
   "private": true,

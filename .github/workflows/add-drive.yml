@@ -1,0 +1,70 @@
+name: Add a drive
+
+# Handles the "Add a drive" form on the site (it opens a pre-filled issue).
+# Issues from the repo owner/collaborators are added straight away; others wait
+# for the owner to put the `approved` label on the issue.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: add-drive
+  cancel-in-progress: false
+
+jobs:
+  add:
+    if: >-
+      contains(github.event.issue.body, '### Drive folder link') &&
+      (github.event.action == 'opened' || github.event.label.name == 'approved')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read the issue and update data/sources.json
+        id: add
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          AUTHOR_ASSOCIATION: ${{ github.event.issue.author_association }}
+          APPROVED: ${{ contains(github.event.issue.labels.*.name, 'approved') }}
+        run: node scripts/add-drive.mjs
+
+      - name: Commit
+        if: steps.add.outputs.status == 'added'
+        env:
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/sources.json
+          git commit -m "Add drive from issue #$NUMBER"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push origin HEAD:main && break; sleep 5; done
+
+      - name: Start indexing
+        if: steps.add.outputs.status == 'added'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main --repo "$GITHUB_REPOSITORY"
+
+      - name: Reply on the issue
+        if: always() && steps.add.outputs.status != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          STATUS: ${{ steps.add.outputs.status }}
+          MESSAGE: ${{ steps.add.outputs.message }}
+        run: |
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE"
+          case "$STATUS" in
+            added|duplicate) gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed ;;
+            invalid) gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason "not planned" ;;
+          esac

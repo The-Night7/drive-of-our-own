@@ -1,0 +1,27 @@
+name: Add a drive
+description: Suggest a fic drive for the search. A bot adds it automatically.
+title: 'Add drive: '
+labels: ['add-drive']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Once you submit, a bot checks the folder is public, adds it to the list and starts indexing it.
+        The folder must be shared as **Anyone with the link**.
+  - type: input
+    id: drive_url
+    attributes:
+      label: Drive folder link
+      placeholder: https://drive.google.com/drive/folders/...
+    validations:
+      required: true
+  - type: input
+    id: credit
+    attributes:
+      label: Who shared it
+      placeholder: '@handle'
+  - type: input
+    id: notes
+    attributes:
+      label: What's in it
+      placeholder: fandoms, ships...

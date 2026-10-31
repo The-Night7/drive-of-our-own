@@ -1,3 +1,8 @@
 node_modules
 dist
 .DS_Store
+# Built by the indexer (kept in the GitHub Actions cache, not in git)
+data/listing.json
+data/meta-cache/
+public/index.json
+public/details/
