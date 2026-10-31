@@ -2,6 +2,10 @@
 // Used by .github/workflows/add-drive.yml: reads an "Add a drive" issue (from the
 // site's form) and appends the drive to data/sources.json.
 //
+// A drive that's already known is turned down ("duplicate"), whether it's in
+// data/sources.json or was found in the master Drive folder (shortcuts and the links
+// in its Google Docs), so the same drive is never added twice.
+//
 // Env: ISSUE_BODY, AUTHOR_ASSOCIATION, APPROVED ("true" when the "approved" label is on).
 // Prints a result line for the workflow: status=<added|duplicate|invalid|not_public|needs_approval>
 
@@ -9,9 +13,11 @@ import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { folderIdFromUrl, listFolder } from './lib/drive.mjs';
+import { discover, sourceKey } from './lib/discover.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCES = resolve(ROOT, 'data/sources.json');
+const CONFIG = resolve(ROOT, 'data/config.json');
 const TRUSTED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 // Issue forms render as "### Label\n\nvalue".
@@ -29,6 +35,28 @@ async function out(status, message) {
   }
 }
 
+// Where an already-known drive came from, in words for the reply on the issue.
+function where(origin) {
+  if (!origin || origin === 'sources.json') return 'it was added to the list earlier';
+  if (origin === 'shortcut') return 'it is a shortcut in the "AO3 - Drives" folder';
+  if (origin.startsWith('doc:')) return `it is linked in the doc "${origin.slice(4)}" in the "AO3 - Drives" folder`;
+  return 'it is already known';
+}
+
+async function findKnown(key, sources) {
+  const manual = sources.find((s) => sourceKey(s.url) === key);
+  if (manual) return { ...manual, origin: 'sources.json' };
+  try {
+    const config = JSON.parse(await readFile(CONFIG, 'utf8'));
+    return (await discover(config)).find((s) => sourceKey(s.url) === key) || null;
+  } catch (err) {
+    // No network / master folder unreadable: don't block the request, the crawler
+    // de-duplicates by id anyway.
+    console.warn(`! could not check the master folder (${err.message}); only data/sources.json was checked`);
+    return null;
+  }
+}
+
 async function main() {
   const body = process.env.ISSUE_BODY || '';
   const url = field(body, 'Drive folder link');
@@ -36,7 +64,11 @@ async function main() {
   if (!id) return out('invalid', "That doesn't look like a Google Drive folder link (https://drive.google.com/drive/folders/…).");
 
   const sources = JSON.parse(await readFile(SOURCES, 'utf8'));
-  if (sources.some((s) => folderIdFromUrl(s.url) === id)) return out('duplicate', 'This drive is already in the list. 💛');
+  const known = await findKnown(id, sources);
+  if (known) {
+    const label = [tidy(known.credit || '', 40), tidy(known.name || known.notes || '', 70)].filter(Boolean).join(' · ');
+    return out('duplicate', `This drive is already in the list${label ? ` (${label})` : ''}: ${where(known.origin)}. Nothing to do, thanks! 💛`);
+  }
 
   const trusted = TRUSTED.has(process.env.AUTHOR_ASSOCIATION) || process.env.APPROVED === 'true';
   if (!trusted) return out('needs_approval', 'Thanks! A maintainer will have a quick look and add the `approved` label, then the bot takes it from there.');

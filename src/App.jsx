@@ -143,6 +143,13 @@ export default function App() {
     setLen('');
   };
 
+  const browseDrive = (id) => {
+    clearFilters();
+    setQ('');
+    setSrc([id]);
+    setView('search');
+  };
+
   const surprise = () => {
     const pool = results.length ? results : [];
     if (pool.length) setHighlight(pool[Math.floor(Math.random() * pool.length)]);
@@ -386,17 +393,9 @@ export default function App() {
       )}
 
       {view === 'drives' && db && (
-        <Drives
-          db={db}
-          onBrowse={(id) => {
-            clearFilters();
-            setQ('');
-            setSrc([id]);
-            setView('search');
-          }}
-        />
+        <Drives db={db} onBrowse={browseDrive} />
       )}
-      {view === 'add' && <AddDrive />}
+      {view === 'add' && <AddDrive db={db} onBrowse={browseDrive} />}
       {view === 'about' && <About />}
 
       <footer className="foot">
@@ -733,11 +732,19 @@ function Drives({ db, onBrowse }) {
   );
 }
 
-function AddDrive() {
+// Same identity as scripts/lib/discover.mjs: the folder id (or the Google file id for sheets).
+const driveKey = (u) => (String(u).match(/\/folders\/([\w-]{10,})/) || String(u).match(/[?&]id=([\w-]{10,})/) || String(u).match(/\/d\/([\w-]{10,})/) || [])[1] || null;
+
+function AddDrive({ db, onBrowse }) {
   const [url, setUrl] = useState('');
   const [credit, setCredit] = useState('');
   const [notes, setNotes] = useState('');
   const valid = /drive\.google\.com\/drive\/(u\/\d+\/)?folders\/[\w-]{10,}/.test(url) || /docs\.google\.com\/spreadsheets\/d\//.test(url);
+  // Already in the list? (the index holds every drive the bot knows, wherever it was found)
+  const known = useMemo(() => {
+    const key = valid ? driveKey(url) : null;
+    return key && db ? db.sources.find((x) => driveKey(x.url) === key) || null : null;
+  }, [db, url, valid]);
   const issueUrl = () => {
     const p = new URLSearchParams({
       template: 'add-drive.yml',
@@ -759,13 +766,25 @@ function AddDrive() {
         className="addform"
         onSubmit={(e) => {
           e.preventDefault();
-          if (valid) window.open(issueUrl(), '_blank', 'noopener');
+          if (valid && !known) window.open(issueUrl(), '_blank', 'noopener');
         }}
       >
         <label>
           Drive folder link <span className="req">required</span>
           <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://drive.google.com/drive/folders/…" required />
           {url && !valid && <span className="field-err">That doesn't look like a Google Drive folder link.</span>}
+          {known && (
+            <span className="field-known" role="status">
+              <strong>Already in the list</strong>: {known.name}
+              {known.credit ? ` (${known.credit})` : ''}
+              {known.count ? ` · ${known.count.toLocaleString('en')} fics. ` : '. '}
+              {known.count > 0 && (
+                <button type="button" className="linklike" onClick={() => onBrowse(known.id)}>
+                  Browse it
+                </button>
+              )}
+            </span>
+          )}
         </label>
         <label>
           Who shared it
@@ -775,7 +794,7 @@ function AddDrive() {
           What's in it
           <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="fandoms, ships…" />
         </label>
-        <button className="primary" type="submit" disabled={!valid}>
+        <button className="primary" type="submit" disabled={!valid || !!known}>
           Continue on GitHub →
         </button>
         <p className="hint">
