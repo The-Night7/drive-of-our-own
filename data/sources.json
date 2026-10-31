@@ -1,17 +1,82 @@
 [
-  { "url": "https://drive.google.com/drive/folders/1xZi6ebwoDw8jdiMsOWPEfH7yFSjgqkRK", "credit": "Shared directly", "notes": "AO3 Library" },
-  { "url": "https://drive.google.com/drive/folders/1TZPY8OzNInudfZAvZ6mh4PHCf_p54H6o", "credit": "Shared directly", "notes": "Lestappen" },
-  { "url": "https://drive.google.com/drive/folders/1Bdcx7cCHoatsqd6npKCF9th72ITGY0rt", "credit": "@Cookie_o_ieo" },
-  { "url": "https://drive.google.com/drive/folders/1YIlxE9YL9avbmrjvHsrImKfwhwXPsO6_", "credit": "@IzarInBootes", "notes": "600+ fics: DC, One Direction, Harry Potter, football RPF, Marvel, Teen Wolf, AFTG..." },
-  { "url": "https://drive.google.com/drive/folders/11aur2uO_6z6kgb4UwIoSNIXNjzVr9H8-", "credit": "@omimiyaa & @klance__dreams", "notes": "Shared fanfic emergency drive, lots of fandoms incl. Klance" },
-  { "url": "https://drive.google.com/drive/folders/1b0mafXXNxNhltGbeCjZ80i1QKwTkAu7_", "credit": "@3Lynella3", "notes": "One folder per fandom" },
-  { "url": "https://drive.google.com/drive/folders/189Z02mbK12uCgq6GIdgxfEtEbQcmjV-G", "credit": "@_velvethorns" },
-  { "url": "https://drive.google.com/drive/folders/1k-cB3CCl9X7w5yPbMANP04aM7ejvD9S-", "credit": "@63rvssell", "notes": "Mega library, all fandoms" },
-  { "url": "https://drive.google.com/drive/folders/1Da9APvXuYQ0A61K1rDWwjVJ7F98Ipp6B", "credit": "@alittlebirdy012", "notes": "mlm, wlw, many fandoms" },
-  { "url": "https://drive.google.com/drive/folders/1wvzySo8o888-ZnsvIes-tbq_8jzCvqDl", "credit": "@LukeTraveler", "notes": "Russtappen" },
-  { "url": "https://drive.google.com/drive/folders/1KIblEDlVW77V4yWEuBA1VjhOIf8lmmPm", "credit": "@LukeTraveler", "notes": "Sincaraz" },
-  { "url": "https://drive.google.com/drive/folders/1cQlu0eSw7bEX69LOlAX8KD3zC3Im8U3c", "credit": "@LukeTraveler", "notes": "Lestappen / F1 RPF" },
-  { "url": "https://drive.google.com/drive/folders/1QS0Ub6rKfn0X3-ROPRi8NhIfj5IGJPDl", "credit": "@LukeTraveler", "notes": "Scott x Stiles" },
-  { "url": "https://drive.google.com/drive/folders/1Ck461TLTEfIYBjlEdeX9ckqbVHDSWbbc", "credit": "@LukeTraveler", "notes": "Others" },
-  { "url": "https://docs.google.com/spreadsheets/d/1YBYqDqTu97ns8EAk_w7iD5fLNRs33hkmvUG-BdOAx8s/edit?gid=333766418", "credit": "@adskayapanda", "notes": "Collaborative Google Sheet, several fandoms", "name": "Collaborative fic sheet" }
+  {
+    "url": "https://drive.google.com/drive/folders/1xZi6ebwoDw8jdiMsOWPEfH7yFSjgqkRK",
+    "credit": "Shared directly",
+    "notes": "AO3 Library"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1TZPY8OzNInudfZAvZ6mh4PHCf_p54H6o",
+    "credit": "Shared directly",
+    "notes": "Lestappen"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1Bdcx7cCHoatsqd6npKCF9th72ITGY0rt",
+    "credit": "@Cookie_o_ieo"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1YIlxE9YL9avbmrjvHsrImKfwhwXPsO6_",
+    "credit": "@IzarInBootes",
+    "notes": "600+ fics: DC, One Direction, Harry Potter, football RPF, Marvel, Teen Wolf, AFTG..."
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/11aur2uO_6z6kgb4UwIoSNIXNjzVr9H8-",
+    "credit": "@omimiyaa & @klance__dreams",
+    "notes": "Shared fanfic emergency drive, lots of fandoms incl. Klance"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1b0mafXXNxNhltGbeCjZ80i1QKwTkAu7_",
+    "credit": "@3Lynella3",
+    "notes": "One folder per fandom"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/189Z02mbK12uCgq6GIdgxfEtEbQcmjV-G",
+    "credit": "@_velvethorns"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1k-cB3CCl9X7w5yPbMANP04aM7ejvD9S-",
+    "credit": "@63rvssell",
+    "notes": "Mega library, all fandoms"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1Da9APvXuYQ0A61K1rDWwjVJ7F98Ipp6B",
+    "credit": "@alittlebirdy012",
+    "notes": "mlm, wlw, many fandoms"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1wvzySo8o888-ZnsvIes-tbq_8jzCvqDl",
+    "credit": "@LukeTraveler",
+    "notes": "Russtappen"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1KIblEDlVW77V4yWEuBA1VjhOIf8lmmPm",
+    "credit": "@LukeTraveler",
+    "notes": "Sincaraz"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1cQlu0eSw7bEX69LOlAX8KD3zC3Im8U3c",
+    "credit": "@LukeTraveler",
+    "notes": "Lestappen / F1 RPF"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1QS0Ub6rKfn0X3-ROPRi8NhIfj5IGJPDl",
+    "credit": "@LukeTraveler",
+    "notes": "Scott x Stiles"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1Ck461TLTEfIYBjlEdeX9ckqbVHDSWbbc",
+    "credit": "@LukeTraveler",
+    "notes": "Others"
+  },
+  {
+    "url": "https://docs.google.com/spreadsheets/d/1YBYqDqTu97ns8EAk_w7iD5fLNRs33hkmvUG-BdOAx8s/edit?gid=333766418",
+    "credit": "@adskayapanda",
+    "notes": "Collaborative Google Sheet, several fandoms",
+    "name": "Collaborative fic sheet"
+  },
+  {
+    "url": "https://drive.google.com/drive/folders/1HAoiBQkUuErQsShH8ooXZwtCGlIPJo6p",
+    "credit": "@Myriota",
+    "notes": "KPop Demon Hunters, Hazbin Hotel, My Hero Academia, Naruto - Boruto, Winx Club, LoliRock, Ranma 1-2, Batman - DC",
+    "name": "AO3_Fanfics"
+  }
 ]
