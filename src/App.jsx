@@ -116,10 +116,10 @@ export default function App() {
     };
   }, [db, src, fmt, folder, inc, exc, done, len]);
 
-  const { results, facetData } = useMemo(() => {
-    if (!db || !filters) return { results: [], facetData: null };
-    const { ids, scores } = search(db, dq, filters);
-    return { results: sortIds(db, ids, scores, sort, !!dq.trim()), facetData: computeFacets(db, ids) };
+  const { results, facetData, hidden } = useMemo(() => {
+    if (!db || !filters) return { results: [], facetData: null, hidden: 0 };
+    const { ids, scores, hidden } = search(db, dq, filters);
+    return { results: sortIds(db, ids, scores, sort, !!dq.trim()), facetData: computeFacets(db, ids), hidden };
   }, [db, dq, filters, sort]);
 
   const toggle = (list, setList, v) => setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
@@ -336,6 +336,12 @@ export default function App() {
                   <span>
                     {results.length.toLocaleString('en')} {results.length === 1 ? 'fic' : 'fics'}
                     {dq && <> for “{dq}”</>}
+                    {hidden > 0 && (
+                      <span className="grouped-note" title="Copies of the same fic from different drives are shown as one result. Open it to pick a version.">
+                        {' '}
+                        · {hidden.toLocaleString('en')} other {hidden === 1 ? 'copy' : 'copies'} grouped
+                      </span>
+                    )}
                   </span>
                   <label className="sort">
                     Sort
@@ -414,7 +420,7 @@ function tagLabel(key) {
 
 // ---------- fic card ----------
 
-function FicCard({ db, i, onTag, onFolder }) {
+function FicView({ db, i, onTag, onFolder, extra }) {
   const details = useDetailsFor(db, i);
   const [open, setOpen] = useState(false);
   const folder = db.folders[db.d[i]];
@@ -479,6 +485,8 @@ function FicCard({ db, i, onTag, onFolder }) {
 
       {details?.summary ? <Summary text={details.summary} /> : null}
 
+      {extra}
+
       <div className="card-foot">
         <div className="card-meta">
           <span className="crumbs">
@@ -526,6 +534,117 @@ function FicCard({ db, i, onTag, onFolder }) {
           </a>
         </div>
       </div>
+    </li>
+  );
+}
+
+// ---------- copies of the same fic ----------
+
+// One card per fic. When it exists in several places, a bar lets the reader see every
+// version (different texts are never merged) and pick the one to show.
+function FicCard({ db, i, onTag, onFolder }) {
+  const g = db.gOf[i];
+  const group = g >= 0 ? db.groups[g] : null;
+  const [cur, setCur] = useState(i);
+  const [open, setOpen] = useState(false);
+  useEffect(() => setCur(i), [i]);
+  const extra = group ? <CopiesBar db={db} group={group} cur={cur} open={open} setOpen={setOpen} onPick={setCur} onFolder={onFolder} /> : null;
+  return <FicView db={db} i={cur} onTag={onTag} onFolder={onFolder} extra={extra} />;
+}
+
+function CopiesBar({ db, group, cur, open, setOpen, onPick, onFolder }) {
+  const places = group.flat().length;
+  const versions = group.length;
+  const label =
+    versions > 1
+      ? `${versions} versions of this fic · ${places} copies`
+      : `Identical copy in ${places} places`;
+  const curVersion = group.findIndex((v) => v.includes(cur));
+  return (
+    <div className={`copies ${open ? 'open' : ''}`}>
+      <button className="copies-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span aria-hidden>⧉</span> {label}
+        {versions > 1 && <span className="copies-now"> · showing version {curVersion + 1}</span>}
+        <span className="copies-chev" aria-hidden>
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+      {open && (
+        <div className="copies-body">
+          {versions > 1 && (
+            <p className="copies-help">
+              These files are not identical, so they are kept apart. Version 1 is the most complete one. Pick the one you want:
+            </p>
+          )}
+          <ol className="versions">
+            {group.map((places, vi) => (
+              <VersionRow key={vi} db={db} n={vi + 1} places={places} multi={versions > 1} current={vi === curVersion} onPick={() => onPick(places[0])} onFolder={onFolder} />
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VersionRow({ db, n, places, multi, current, onPick }) {
+  const rep = places[0];
+  const d = useDetailsFor(db, rep);
+  const bits = [
+    db.w[rep] > 0 && `${db.w[rep].toLocaleString('en')} words`,
+    d?.chapters && `${d.chapters} ch.`,
+    db.c[rep] === 1 ? 'complete' : db.c[rep] === 2 ? 'work in progress' : null,
+    d?.updated ? `updated ${d.updated}` : d?.published ? `published ${d.published}` : null,
+    d?.files?.length && d.files.map(([f]) => fmtLabel(f)).join(' + '),
+    d?.fileWords > 0 && `${d.fileWords.toLocaleString('en')} words in the file`,
+  ].filter(Boolean);
+  return (
+    <li className={`version ${current ? 'current' : ''}`}>
+      {multi ? (
+        <label className="version-head">
+          <input type="radio" name={`ver-${rep}`} checked={current} onChange={onPick} />
+          <span>
+            <strong>Version {n}</strong>
+            {n === 1 && <span className="suggested">suggested</span>}
+            <span className="version-bits">{bits.join(' · ')}</span>
+          </span>
+        </label>
+      ) : (
+        <div className="version-head">
+          <span className="version-bits">{bits.join(' · ')}</span>
+        </div>
+      )}
+      <ul className="places">
+        {places.map((e) => (
+          <PlaceRow key={e} db={db} e={e} />
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+function PlaceRow({ db, e }) {
+  const d = useDetailsFor(db, e);
+  const folder = db.folders[db.d[e]];
+  const source = db.sources[folder[0]];
+  return (
+    <li className="place">
+      <span className="place-where">
+        <strong>{source.name}</strong>
+        {folder[2].length > 0 && <span className="place-path"> › {folder[2].join(' › ')}</span>}
+        {source.credit && <span className="place-credit"> · {source.credit}</span>}
+        {d?.added ? <span className="place-credit"> · added {d.added}</span> : null}
+      </span>
+      <span className="place-links">
+        {d?.files?.map(([f, id]) => (
+          <a key={id} className="fmt fmt-small" href={fileUrl(f, id)} target="_blank" rel="noreferrer">
+            {fmtLabel(f)}
+          </a>
+        ))}
+        <a className="fmt fmt-small fmt-folder" href={`https://drive.google.com/drive/folders/${folder[1]}`} target="_blank" rel="noreferrer">
+          Folder ↗
+        </a>
+      </span>
     </li>
   );
 }
@@ -835,6 +954,13 @@ function About() {
         <li>Click any tag on a fic to filter by it. In the sidebar, use − to exclude a tag.</li>
         <li>
           Press <kbd>/</kbd> to jump to the search box. Searches live in the URL, so you can share them.
+        </li>
+        <li>
+          The same fic often sits in several drives. Copies are grouped into one result: open “versions of this fic” to
+          see them all and pick one. Identical files count as one version with several places. If there's any
+          difference in the text, they stay separate versions (the most complete is suggested). Fics by different
+          authors are never grouped, even with the same title, and a copy whose author can't be read isn't grouped
+          unless its text or AO3 work id matches.
         </li>
         <li>Fics that weren't downloaded from AO3 (renamed files, Google Docs…) have no tags, but you can still find them by title and folder.</li>
       </ul>

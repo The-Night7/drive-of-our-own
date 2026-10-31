@@ -4,6 +4,7 @@
 
 import { unzipSync, strFromU8 } from 'fflate';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,6 +44,14 @@ const splitList = (s) =>
     .split(/,(?![^()]*\))/) // AO3 tags can't contain commas, but keep "(Formula 1 RPF)" disambiguators intact
     .map(clean)
     .filter((x) => x && x.length < 200);
+
+// Fingerprint of a document's text, used to tell identical copies from different versions:
+// whitespace is normalised, nothing else, so any change to the text changes the hash.
+export function fingerprint(text) {
+  const t = String(text).replace(/\s+/g, ' ').trim();
+  const words = t ? t.split(' ').length : 0;
+  return { h: words >= 20 ? createHash('sha1').update(t).digest('hex').slice(0, 16) : null, tw: words };
+}
 
 function htmlToText(html) {
   return decode(
@@ -160,6 +169,8 @@ function normalize(raw, extra = {}) {
   else if (/Status:\s*(In[- ]Progress|Ongoing|WIP)/i.test(stats)) meta.complete = false;
   const pub = stats.match(/Published:\s*(\d{4}-\d{2}-\d{2})/i);
   if (pub) meta.published = pub[1];
+  const upd = stats.match(/(?:Updated|Completed):\s*(\d{4}-\d{2}-\d{2})/i);
+  if (upd) meta.updated = upd[1];
 
   const ao3 = text.match(/archiveofourown\.org\/works\/(\d+)/);
   if (ao3) meta.ao3Id = ao3[1];
@@ -178,6 +189,8 @@ function normalize(raw, extra = {}) {
 
 // ---------- EPUB ----------
 
+// Returns { meta, h, tw }: the AO3 metadata (or null), a fingerprint of the whole text
+// and its word count; or null if the file isn't a readable EPUB.
 export function parseEpub(buf) {
   let files;
   try {
@@ -229,14 +242,15 @@ export function parseEpub(buf) {
     const by = text.match(/^\s*.+?\s+by\s+(.+)$/m);
     if (by) extra.author = by[1];
   }
-  return normalize(raw, extra);
+  const fp = fingerprint(docs.filter((n) => files[n]).map((n) => htmlToText(read(n))).join('\n'));
+  return { meta: normalize(raw, extra), ...fp };
 }
 
 // ---------- PDF ----------
 
 let hasPdftotext = null;
 const run = (cmd, args) =>
-  new Promise((res, rej) => execFile(cmd, args, { maxBuffer: 8 << 20, timeout: 30000 }, (e, out) => (e ? rej(e) : res(out))));
+  new Promise((res, rej) => execFile(cmd, args, { maxBuffer: 128 << 20, timeout: 90000 }, (e, out) => (e ? rej(e) : res(out))));
 
 export async function pdfAvailable() {
   if (hasPdftotext === null) {
@@ -257,7 +271,9 @@ export async function parsePdf(buf) {
   const file = join(tmp, `${process.pid}-${Math.random().toString(36).slice(2)}.pdf`);
   await writeFile(file, buf);
   try {
-    const text = await run('pdftotext', ['-layout', '-enc', 'UTF-8', '-l', '3', file, '-']);
+    // Whole document: the first pages hold the AO3 info block, all of it is fingerprinted.
+    const all = await run('pdftotext', ['-layout', '-enc', 'UTF-8', file, '-']);
+    const text = all.split('\f').slice(0, 3).join('\f');
     const raw = parseFields(text);
     raw._text = text;
     const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -268,7 +284,7 @@ export async function parsePdf(buf) {
       extra.author = lines[byIdx].replace(/^by\s+/i, '');
       extra.title = lines[byIdx - 1];
     } else if (lines[0] && lines[0].length < 200) extra.title = lines[0];
-    return normalize(raw, extra);
+    return { meta: normalize(raw, extra), ...fingerprint(all) };
   } catch {
     return null;
   } finally {

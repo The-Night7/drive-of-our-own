@@ -90,6 +90,26 @@ extracts their tags (`scripts/build-index.mjs`). The tag step needs `pdftotext`
 - `node scripts/crawl.mjs --only <folderId>` re-lists a single drive.
 - `node scripts/build-index.mjs --limit 500` reads tags for at most 500 new files.
 
+## Copies of the same fic
+
+The same fic is often in several drives. Each result is one fic; if there are other
+copies, a bar on the card (“2 versions of this fic · 3 copies”) opens the list of them
+so the reader can pick. The rules live in [`scripts/lib/group.mjs`](scripts/lib/group.mjs)
+(tests: `npm test`):
+
+- **Same fic** = identical text (a fingerprint of the whole document is stored when it
+  is downloaded), or the same AO3 work id, or the same title **and** a common author.
+- **Different authors are never grouped**, whatever the title (there are dozens of
+  different “Home”). A copy whose author can't be read (no AO3 info page, not
+  downloaded yet) is only grouped through identical text or AO3 id. Very generic titles
+  (shared by more than 60 fics) are never grouped by title.
+- **Identical files are merged** into one version with several places. **Any difference
+  in the text keeps copies apart as separate versions** (never merged), best first:
+  complete, then longest. The same work as an EPUB and as a PDF is one version only if
+  its stats (words, chapters, last update) are identical.
+
+Grouping gets more complete as tags and fingerprints are collected over the runs.
+
 ## Files
 
 | Path | What it is |

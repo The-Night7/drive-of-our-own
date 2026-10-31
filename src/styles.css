@@ -491,3 +491,26 @@ kbd { border: 1px solid var(--line); }
   .drive { flex-direction: column; align-items: flex-start; }
   .brand-tag { display: none; }
 }
+
+/* copies of the same fic */
+.grouped-note { color: var(--ink-2); }
+.copies { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.copies-toggle { width: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; text-align: left; border: 0; background: none; cursor: pointer; padding: 8px 12px; font-size: 13.5px; font-weight: 600; color: var(--ink); border-radius: 10px; }
+.copies-toggle:hover { color: var(--accent); }
+.copies-now { font-weight: 400; color: var(--ink-2); }
+.copies-chev { margin-left: auto; color: var(--ink-2); }
+.copies-body { padding: 0 12px 12px; }
+.copies-help { margin: 2px 0 10px; font-size: 13px; color: var(--ink-2); }
+.versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.version { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.version.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.version-head { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13.5px; }
+.version-head input { accent-color: var(--accent); margin: 3px 0 0; flex: none; }
+.version-bits { display: block; color: var(--ink-2); font-size: 12.5px; }
+.suggested { margin-left: 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ok); background: var(--ok-soft); padding: 2px 7px; border-radius: 999px; }
+.places { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.place { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.place-where { min-width: 0; overflow-wrap: anywhere; }
+.place-path, .place-credit { color: var(--ink-2); }
+.place-links { display: flex; gap: 5px; flex-wrap: wrap; }
+.fmt-small { padding: 6px 9px; font-size: 11.5px; }

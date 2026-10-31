@@ -38,14 +38,24 @@ export const LENGTHS = [
 export const tagKey = (db, id) => `${db.tags[id][0]}:${db.tags[id][1]}`;
 
 export function prepare(index) {
-  if (index.v !== 2) throw new Error('This index was built by an older version — run the build again.');
+  if (index.v !== 3) throw new Error('This index was built by an older version — run the build again.');
   const n = index.count;
+  // Copies of the same fic: groups[g] = versions (best first), each a list of places holding
+  // that exact document. rank = position of a copy inside its group, best first.
+  const gOf = new Int32Array(n).fill(-1);
+  const rank = new Int32Array(n);
+  index.groups.forEach((versions, g) => {
+    let r = 0;
+    for (const places of versions) for (const e of places) { gOf[e] = g; rank[e] = r++; }
+  });
   const tagIdByKey = new Map(index.tags.map(([code, name], i) => [`${code}:${name}`, i]));
   const ficTags = new Array(n);
   for (let i = 0; i < n; i++) ficTags[i] = index.g[i] ? index.g[i].split('.').map((x) => parseInt(x, 36)) : [];
   return {
     ...index,
     n,
+    gOf,
+    rank,
     ficTags,
     tagIdByKey,
     nTitle: index.t.map(norm),
@@ -126,7 +136,30 @@ export function search(db, query, filters) {
     ids.push(i);
     scores.set(i, score);
   }
-  return { ids, scores };
+  return collapse(db, ids, scores);
+}
+
+// One result per fic: when several copies match, keep the best one (the group's best version
+// first), with the best score of the copies. The others stay reachable from the card.
+function collapse(db, ids, scores) {
+  const single = [];
+  const best = new Map();
+  for (const i of ids) {
+    const g = db.gOf[i];
+    if (g < 0) {
+      single.push(i);
+      continue;
+    }
+    const cur = best.get(g);
+    if (cur === undefined) best.set(g, i);
+    else {
+      const [keep, drop] = db.rank[i] < db.rank[cur] ? [i, cur] : [cur, i];
+      scores.set(keep, Math.max(scores.get(keep), scores.get(drop)));
+      best.set(g, keep);
+    }
+  }
+  const out = single.concat([...best.values()]);
+  return { ids: out, scores, hidden: ids.length - out.length };
 }
 
 const tagSetCache = new Map();
@@ -218,8 +251,8 @@ export function loadDetails(base, chunkSize, i) {
   return detailCache.get(c).then((rows) => {
     const row = rows[i % chunkSize];
     if (!row) return null;
-    const [files, ao3Id, summary, added, language, published, chapters] = row;
-    return { files, ao3Id, summary, added, language, published, chapters };
+    const [files, ao3Id, summary, added, language, published, chapters, updated, fileWords] = row;
+    return { files, ao3Id, summary, added, language, published, chapters, updated, fileWords };
   });
 }
 

@@ -7,7 +7,8 @@
     "preview": "vite preview",
     "crawl": "node scripts/crawl.mjs",
     "tags": "node scripts/build-index.mjs",
-    "index": "node scripts/crawl.mjs && node scripts/build-index.mjs"
+    "index": "node scripts/crawl.mjs && node scripts/build-index.mjs",
+    "test": "node --test scripts/lib/*.test.mjs"
   },
   "repository": {
     "type": "git",

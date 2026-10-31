@@ -35,6 +35,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Check the grouping rules
+        run: npm test
+
       - name: Install pdftotext
         run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
 

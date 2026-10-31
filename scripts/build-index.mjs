@@ -16,18 +16,21 @@ import { fileURLToPath } from 'node:url';
 import { getWithRetry, sleep, decode } from './lib/drive.mjs';
 import { parseEpub, parsePdf, pdfAvailable } from './lib/meta.mjs';
 import { expand } from './lib/index-format.mjs';
+import { groupFics } from './lib/group.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const LISTING = resolve(ROOT, 'data/listing.json');
-const INDEX = resolve(ROOT, 'public/index.json');
-const DETAILS_DIR = resolve(ROOT, 'public/details');
-const CACHE_DIR = resolve(ROOT, 'data/meta-cache');
+// The paths can be redirected (to try things out without touching the real data).
+const LISTING = process.env.LISTING_FILE || resolve(ROOT, 'data/listing.json');
+const INDEX = process.env.INDEX_FILE || resolve(ROOT, 'public/index.json');
+const DETAILS_DIR = process.env.DETAILS_DIR || resolve(dirname(INDEX), 'details');
+const CACHE_DIR = process.env.CACHE_DIR || resolve(ROOT, 'data/meta-cache');
 const CHUNK = 500;
 const MAX_BYTES = 40 << 20;
 // Bump when the metadata parser improves: older cache entries are then re-read
 // (a few thousand per run, so it never blocks new fics).
-const PARSER_VERSION = 2;
-const REPARSE_PER_RUN = 3000;
+// v3 adds a fingerprint of each document's text (used to group copies of the same fic).
+const PARSER_VERSION = 3;
+const REPARSE_PER_RUN = 15000;
 
 const args = process.argv.slice(2);
 const arg = (name, def) => {
@@ -99,9 +102,11 @@ async function fetchMeta(format, id) {
     return { x: 'html' };
   }
   const buf = Buffer.from(await res.arrayBuffer());
-  const meta = format === 'epub' ? parseEpub(buf) : await parsePdf(buf);
-  if (meta === undefined) return undefined; // pdftotext missing: try again on a machine that has it
-  return meta || { x: 'none' };
+  const parsed = format === 'epub' ? parseEpub(buf) : await parsePdf(buf);
+  if (parsed === undefined) return undefined; // pdftotext missing: try again on a machine that has it
+  if (!parsed) return { x: 'none' };
+  // h/tw: fingerprint and word count of the whole text, kept even when there are no tags.
+  return parsed.meta ? { ...parsed.meta, h: parsed.h, tw: parsed.tw } : { x: 'none', h: parsed.h, tw: parsed.tw };
 }
 
 // ---------- index ----------
@@ -131,6 +136,25 @@ const fixMeta = (m) => {
 
 function buildIndex(listing, fics, cache) {
   const metas = fics.map((f) => fixMeta(f.fl.map(([, id]) => cache.get(id)).find((m) => m && !m.x) || null));
+
+  // Copies of the same fic in different drives/folders: grouped (see lib/group.mjs).
+  const items = fics.map((f, i) => {
+    const m = metas[i];
+    const hashed = f.fl.map(([fmt, id]) => [fmt, cache.get(id)]).find(([, e]) => e && e.h);
+    return {
+      title: dec(m?.title || f.t),
+      ao3Id: m?.ao3Id || f.a || null,
+      author: m?.author || null,
+      h: hashed?.[1].h || null,
+      hf: hashed?.[0] || null,
+      sig: m?.words && m.chapters && (m.updated || m.published) ? `${m.words}|${m.chapters}|${m.updated || m.published}` : null,
+      words: m?.words || hashed?.[1].tw || 0,
+      tw: hashed?.[1].tw || 0, // words actually in the file
+      complete: m?.complete === true,
+      tagged: !!m,
+    };
+  });
+  const groups = groupFics(items);
 
   const tagCount = new Map();
   const ficKeys = metas.map((m) => {
@@ -189,7 +213,7 @@ function buildIndex(listing, fics, cache) {
     cols.w.push(m?.words || 0);
     cols.c.push(m?.complete === true ? 1 : m?.complete === false ? 2 : 0);
     cols.f.push(files.reduce((bits, [fmt]) => bits | (FORMAT_BITS[fmt] || 16), 0));
-    // details: [files, ao3 id, summary, date added, language, published, chapters]
+    // details: [files, ao3 id, summary, date added, language, published, chapters, updated, words in the file]
     details.push([
       files,
       m?.ao3Id || f.a || 0,
@@ -198,15 +222,20 @@ function buildIndex(listing, fics, cache) {
       m?.language && m.language !== 'English' ? m.language : 0,
       m?.published || 0,
       m?.chapters || 0,
+      m?.updated || 0,
+      items[i].tw,
     ]);
   });
 
   const index = {
-    v: 2,
+    v: 3,
     generated: listing.generated,
     built: new Date().toISOString(),
     count: fics.length,
     tagged: metas.filter(Boolean).length,
+    // groups[g] = versions of one fic, best first; a version = the places holding that
+    // exact document (fic ids). Fics not listed here have no other copy.
+    groups,
     chunk: CHUNK,
     sources: listing.sources,
     folders,
@@ -287,7 +316,10 @@ async function main() {
   await rm(DETAILS_DIR, { recursive: true, force: true });
   await mkdir(DETAILS_DIR, { recursive: true });
   for (let i = 0; i < chunks.length; i++) await writeFile(join(DETAILS_DIR, `${i}.json`), JSON.stringify(chunks[i]));
+  const inGroups = index.groups.reduce((n, g) => n + g.flat().length, 0);
+  const versions = index.groups.reduce((n, g) => n + g.length, 0);
   console.log(`Tagged ${index.tagged}/${fics.length} fics with ${index.tags.length} distinct tags; ${chunks.length} detail chunks`);
+  console.log(`${index.groups.length} fics exist in several places (${inGroups} copies, ${versions} distinct versions)`);
 }
 
 main().catch((err) => {
