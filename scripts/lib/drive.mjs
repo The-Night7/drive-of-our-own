@@ -22,11 +22,28 @@ const NAMED = {
   ntilde: 'ñ', oelig: 'œ', aelig: 'æ', szlig: 'ß', Eacute: 'É', Egrave: 'È', Agrave: 'À', Ccedil: 'Ç',
 };
 
-export const decode = (s) =>
-  String(s)
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&([a-zA-Z]+);/g, (m, name) => NAMED[name] ?? m);
+// Every Latin-1 named entity (codepoints 160-255), so accented letters never stay encoded.
+const LATIN1 = "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml".split(" ");
+LATIN1.forEach((n, i) => {
+  NAMED[n] ??= String.fromCharCode(160 + i);
+});
+
+const decodeOnce = (s) =>
+  s
+    .replace(/&#(\d+);/g, (m, n) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : m))
+    .replace(/&#x([0-9a-f]+);/gi, (m, n) => (parseInt(n, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(n, 16)) : m))
+    .replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (m, name) => (Object.hasOwn(NAMED, name) ? NAMED[name] : m));
+
+// Some exporters escape twice ("&amp;amp;"), so decode until nothing changes (3 passes at most).
+export const decode = (s) => {
+  let out = String(s);
+  for (let k = 0; k < 3; k++) {
+    const next = decodeOnce(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+};
 
 // GET with retries on network errors / 429 / 5xx. Returns the Response, or null on 4xx.
 export async function getWithRetry(url, { tries = 5, timeoutMs = 60000 } = {}) {
