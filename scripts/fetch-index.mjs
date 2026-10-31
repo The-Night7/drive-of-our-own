@@ -6,7 +6,7 @@
 // Env: INDEX_URL overrides the download URL. If the download fails, the build goes
 // on without data (the site then says the index isn't ready yet).
 
-import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -28,7 +28,8 @@ async function main() {
   try {
     const file = join(dir, 'bundle.tgz');
     await writeFile(file, buf);
-    await run('tar', ['-xzf', file, '-C', join(ROOT, 'public')]);
+    await mkdir(join(ROOT, 'public'), { recursive: true });
+ await run('tar', ['-xzf', file, '-C', join(ROOT, 'public')]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
