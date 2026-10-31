@@ -49,8 +49,13 @@ jobs:
           path: |
             data/listing.json
             data/meta-cache
-          key: index-${{ github.run_id }}
+          key: index-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: index-
+
+      # Safety net: anything the last published index has tags for and this cache lacks (cache
+      # evicted, or a run failed to save it) is imported, so tags are never lost.
+      - name: Refill the cache from the published index
+        run: node scripts/seed-cache.mjs
 
       - name: List new drives
         run: node scripts/crawl.mjs --max-minutes 15 --if-older-than-hours 20

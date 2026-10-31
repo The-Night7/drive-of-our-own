@@ -17,6 +17,7 @@ import { getWithRetry, sleep, decode } from './lib/drive.mjs';
 import { parseEpub, parsePdf, pdfAvailable } from './lib/meta.mjs';
 import { expand, INDEX_FORMAT } from './lib/index-format.mjs';
 import { groupFics } from './lib/group.mjs';
+import { loadCache as loadCacheFrom, cacheWriter } from './lib/cache.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // The paths can be redirected (to try things out without touching the real data).
@@ -44,42 +45,10 @@ const deadline = Date.now() + maxMinutes * 60000;
 
 // ---------- cache ----------
 
-const SHARDS = 32;
-const shardOf = (id) => {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return String(h % SHARDS).padStart(2, '0');
-};
-
-async function loadCache() {
-  const cache = new Map();
-  await mkdir(CACHE_DIR, { recursive: true });
-  for (const f of await readdir(CACHE_DIR)) {
-    if (!f.endsWith('.ndjson')) continue;
-    for (const line of (await readFile(join(CACHE_DIR, f), 'utf8')).split('\n')) {
-      if (!line) continue;
-      try {
-        const { i, ...rest } = JSON.parse(line);
-        cache.set(i, rest);
-      } catch {}
-    }
-  }
-  return cache;
-}
-
-const pending = new Map();
-function remember(cache, id, value) {
-  cache.set(id, value);
-  const shard = shardOf(id);
-  if (!pending.has(shard)) pending.set(shard, []);
-  pending.get(shard).push(JSON.stringify({ i: id, ...value }));
-}
-async function flush() {
-  for (const [shard, lines] of pending) {
-    await appendFile(join(CACHE_DIR, `${shard}.ndjson`), lines.join('\n') + '\n');
-  }
-  pending.clear();
-}
+const writer = cacheWriter(CACHE_DIR);
+const remember = writer.remember;
+const flush = writer.flush;
+const loadCache = () => loadCacheFrom(CACHE_DIR);
 
 // ---------- download + parse ----------
 

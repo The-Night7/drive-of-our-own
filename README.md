@@ -35,7 +35,8 @@ The steps:
 3. **Reads the tags.** It downloads each new EPUB (or the PDF when there's no EPUB)
    once and reads the AO3 info page: rating, warnings, category, fandoms,
    relationships, characters, additional tags, summary, author, word count,
-   chapters. Results are cached per file, so each run only reads new files. The
+   chapters. Results are cached per file, so each run only reads new files. If the cache
+   is ever lost, it is refilled from the last published index (`scripts/seed-cache.mjs`). The
    first pass over a big collection takes a few runs.
 4. **Publishes the index and redeploys the site.** The index is uploaded as an asset
    of the `index-data` release, then a Vercel deploy hook is called. The Vercel build
