@@ -1,0 +1,29 @@
+{
+  "name": "drive-of-our-own",
+  "description": "A search engine for fanfics archived in community Google Drives",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "crawl": "node scripts/crawl.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/The-Night7/drive-of-our-own.git"
+  },
+  "bugs": {
+    "url": "https://github.com/The-Night7/drive-of-our-own/issues"
+  },
+  "homepage": "https://github.com/The-Night7/drive-of-our-own#readme",
+  "dependencies": {
+    "fuse.js": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "vite": "^5.4.10"
+  },
+  "private": true,
+  "type": "module"
+}
