@@ -91,25 +91,34 @@ extracts their tags (`scripts/build-index.mjs`). The tag step needs `pdftotext`
 - `node scripts/crawl.mjs --only <folderId>` re-lists a single drive.
 - `node scripts/build-index.mjs --limit 500` reads tags for at most 500 new files.
 
-## Reading PDFs in the site
+## Reading PDFs and EPUBs in the site
 
-A click on a PDF (the title, or the **Read PDF** button) opens it in a built-in reader
-([`src/PdfReader.jsx`](src/PdfReader.jsx), pdf.js, loaded only when needed):
+A click on a fic (its title, or the **Read PDF** / **Read EPUB** button) opens it in a built-in
+reader, loaded only when needed. When a fic has both, the title opens the EPUB (it reflows to
+the screen); the PDF has its own button.
 
-- continuous scrolling, page jump, zoom (fit width by default), full screen;
-- **search in the text** with highlights (press `/`), contents/outline when the PDF has one;
-- reading modes **paper / sepia / night** (night follows the phone's dark mode the first time);
-- remembers the last page, zoom and mode per fic; the phone's back button closes the reader;
-- download and “open in Google Drive” buttons; keyboard: `←` `→` pages, `+` `-` `0` zoom,
-  `t` mode, `o` contents, `Esc` close.
+Both readers: search in the text with highlights (`/`), contents, reading modes **paper /
+sepia / night** (night follows the phone's dark mode the first time), full screen, download
+and “open in Google Drive” buttons, they remember where you stopped, the phone's back button
+closes them, `Esc` closes the top panel first.
 
-Google refuses to serve a Drive file to a browser's own request (403), so the PDF goes
-through a small relay, [`api/pdf.js`](api/pdf.js) (a Vercel Edge Function). It streams the
-file from Drive and stores nothing (`Cache-Control: private`); it only accepts requests
-from the site's own pages, only PDFs, up to 80 MB. It does use Vercel bandwidth: roughly
-the size of each PDF opened. If Google won't serve a file (private, or over its download
-quota), the reader says why and shows Google's own viewer instead. EPUBs and other formats
-still link to Drive.
+- **PDF** ([`src/PdfReader.jsx`](src/PdfReader.jsx), pdf.js): continuous pages, zoom (fit width
+  by default), jump to a page, the PDF's outline.
+- **EPUB** ([`src/EpubReader.jsx`](src/EpubReader.jsx) + [`src/epub.js`](src/epub.js)): text you
+  can resize (size, serif/sans, width, spacing), chapters with the book's own contents, a
+  progress slider, links between chapters and notes. An EPUB is untrusted content, so every
+  chapter is sanitized with DOMPurify and an allow-list (no scripts, frames, forms, svg, event
+  handlers or classes; inline style cut down to a few typographic properties; images only from
+  inside the book; ids prefixed per chapter) — `scripts/lib/epub.test.mjs` and the browser tests
+  cover it.
+
+Google refuses to serve a Drive file to a browser's own request (403), so files go through a
+small relay, [`api/file.js`](api/file.js) (a Vercel Edge Function, `GET /api/file?id=…&kind=pdf|epub`).
+It streams the file from Drive and stores nothing (`Cache-Control: private`); it only accepts
+requests from the site's own pages, checks the first bytes match the kind, up to 80 MB. It does
+use Vercel bandwidth: roughly the size of each file opened. If Google won't serve a file
+(private, or over its download quota) the reader says why (and, for a PDF, shows Google's own
+viewer). Other formats link to Drive.
 
 ## Copies of the same fic
 

@@ -11,6 +11,11 @@ export const config = { runtime: 'edge' };
 
 const MAX_BYTES = 80 * 1024 * 1024;
 const ID = /^[\w-]{20,80}$/;
+// What each kind must start with, and what we answer with.
+const KINDS = {
+  pdf: { magic: '%PDF', type: 'application/pdf' },
+  epub: { magic: 'PK\u0003\u0004', type: 'application/epub+zip' }, // an EPUB is a zip
+};
 
 const fail = (status, message) =>
   new Response(JSON.stringify({ error: message }), {
@@ -21,7 +26,9 @@ const fail = (status, message) =>
 export default async function handler(request) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id') || '';
+  const kind = KINDS[url.searchParams.get('kind') || ''];
   if (!ID.test(id)) return fail(400, 'bad id');
+  if (!kind) return fail(400, 'bad kind');
 
   // Only the site's own pages may use the relay (a browser sets Sec-Fetch-Site; otherwise fall back to Referer).
   const site = request.headers.get('sec-fetch-site');
@@ -49,13 +56,13 @@ export default async function handler(request) {
     return fail(413, 'file too large');
   }
 
-  // Check the first bytes: Google's quota and virus-scan pages are HTML, not a PDF.
+  // Check the first bytes: Google's quota and virus-scan pages are HTML, not the file.
   const reader = upstream.body.getReader();
   const first = await reader.read();
   const head = first.value ? new TextDecoder('latin1').decode(first.value.subarray(0, 64)) : '';
-  if (!head.startsWith('%PDF')) {
+  if (!head.startsWith(kind.magic)) {
     reader.cancel();
-    return fail(/^\s*<(!doctype|html)/i.test(head) ? 429 : 415, 'not a PDF (quota page or another format)');
+    return fail(/^\s*<(!doctype|html)/i.test(head) ? 429 : 415, 'not the expected file type (quota page or another format)');
   }
 
   let sent = first.value.length;
@@ -79,7 +86,7 @@ export default async function handler(request) {
   });
 
   const headers = {
-    'content-type': 'application/pdf',
+    'content-type': kind.type,
     'cache-control': 'private, max-age=3600',
     'x-content-type-options': 'nosniff',
     'content-disposition': 'inline',

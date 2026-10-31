@@ -1,0 +1,90 @@
+/* EPUB reader typography and controls (loaded with EpubReader.jsx). Colours come from reader.css. */
+.reader-epub { --epub-ink: var(--r-ink); }
+.reader-epub[data-theme='paper'] { --r-page-bg: #fbf8f1; }
+.reader-epub[data-theme='sepia'] { --r-page-bg: #f1e6cb; }
+.reader-epub[data-theme='night'] { --r-page-bg: #141211; --r-ink: #dcd0c6; }
+
+.epub-scroll { background: var(--r-page-bg); scroll-behavior: auto; }
+.epub {
+  box-sizing: border-box;
+  max-width: calc(var(--epub-width, 700px) + 2 * 28px);
+  margin: 0 auto;
+  padding: 28px 28px 80px;
+  color: var(--r-ink);
+  font-family: var(--epub-font, Georgia, serif);
+  font-size: calc(var(--epub-size, 100%) * 1.125); /* 100% = 18px: comfortable for long reading */
+  line-height: var(--epub-lh, 1.65);
+  overflow-wrap: break-word;
+  hyphens: auto;
+  text-rendering: optimizeLegibility;
+}
+@media (max-width: 600px) { .epub { padding: 18px 16px 70px; font-size: calc(var(--epub-size, 100%) * 1.0625); } }
+
+.epub-ch { margin-bottom: 3.5em; }
+.epub-ch + .epub-ch { padding-top: 2.5em; border-top: 1px solid var(--r-line); }
+.epub p { margin: 0 0 0.9em; }
+.epub h1, .epub h2, .epub h3, .epub h4, .epub h5, .epub h6 { line-height: 1.25; margin: 1.4em 0 0.6em; font-weight: 700; }
+.epub h1 { font-size: 1.6em; } .epub h2 { font-size: 1.4em; } .epub h3 { font-size: 1.2em; } .epub h4, .epub h5, .epub h6 { font-size: 1.05em; }
+.epub blockquote { margin: 1em 0; padding: 0.1em 0 0.1em 1.1em; border-left: 3px solid var(--r-line); color: color-mix(in srgb, var(--r-ink) 85%, transparent); }
+.epub hr { border: 0; text-align: center; margin: 2em 0; height: 1em; }
+.epub hr::after { content: '* * *'; letter-spacing: 0.5em; color: var(--r-ink-2); }
+.epub img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+.epub a { color: var(--r-accent); text-underline-offset: 2px; }
+.epub pre, .epub code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.epub pre { white-space: pre-wrap; overflow-x: auto; }
+.epub table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
+.epub td, .epub th { border: 1px solid var(--r-line); padding: 0.3em 0.6em; }
+.epub ul, .epub ol { padding-left: 1.4em; }
+.epub-end { text-align: center; color: var(--r-ink-2); margin-top: 3em; font-size: 0.85em; }
+.epub ::selection { background: rgb(64 128 255 / 30%); }
+
+/* search matches (CSS Custom Highlight API) */
+::highlight(epub-hit) { background-color: rgb(255 214 0 / 55%); color: inherit; }
+::highlight(epub-cur) { background-color: rgb(255 120 0 / 70%); color: inherit; }
+
+/* text settings popover */
+.rb-aa { font-weight: 700; font-family: Georgia, serif; font-size: 16px; }
+.reader-menu {
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  z-index: 5;
+  width: min(340px, calc(100vw - 16px));
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  background: var(--r-bar);
+  border: 1px solid var(--r-line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
+}
+.menu-row { display: flex; align-items: center; gap: 8px; }
+.menu-label { width: 4.6em; flex: none; color: var(--r-ink-2); font-size: 13px; }
+.seg { display: flex; flex: 1; gap: 4px; }
+.seg button {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--r-line);
+  border-radius: 8px;
+  background: none;
+  color: var(--r-ink);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.seg button.on { background: color-mix(in srgb, var(--r-accent) 18%, transparent); border-color: var(--r-accent); color: var(--r-accent); font-weight: 600; }
+
+/* bottom bar: progress */
+.reader-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+  background: var(--r-bar);
+  border-top: 1px solid var(--r-line);
+}
+.foot-mid { flex: 1; min-width: 0; display: grid; gap: 0; }
+.foot-mid input[type='range'] { width: 100%; height: 22px; margin: 0; accent-color: var(--r-accent); cursor: pointer; }
+.foot-label { font-size: 12px; color: var(--r-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; margin-top: -2px; }
+.foot-pct { min-width: 3.2em; text-align: right; font-size: 13px; color: var(--r-ink-2); font-variant-numeric: tabular-nums; }

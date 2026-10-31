@@ -16,8 +16,9 @@ import {
 
 const BASE = import.meta.env.BASE_URL;
 
-// The PDF reader (pdf.js, ~1 MB) is only downloaded when someone opens a PDF.
+// The readers (pdf.js ~1 MB, the EPUB reader) are only downloaded when someone opens a file.
 const PdfReader = lazy(() => import('./PdfReader.jsx'));
+const EpubReader = lazy(() => import('./EpubReader.jsx'));
 const ReaderContext = createContext(() => {});
 const PAGE = 30;
 const FMT_LABEL = { gdoc: 'Google Doc', htm: 'HTML' };
@@ -433,7 +434,7 @@ export default function App() {
 
       {reader && (
         <Suspense fallback={<div className="reader-boot">Opening the reader…</div>}>
-          <PdfReader {...reader} onClose={closeReader} />
+          {reader.kind === 'epub' ? <EpubReader {...reader} onClose={closeReader} /> : <PdfReader {...reader} onClose={closeReader} />}
         </Suspense>
       )}
     </div>
@@ -460,6 +461,7 @@ function FicView({ db, i, onTag, onFolder, extra }) {
   for (const t of tags) (byType[db.tags[t][0]] ||= []).push(t);
   const primary = details?.files?.[0];
   const author = db.a[i] >= 0 ? db.authors[db.a[i]] : null;
+  const readable = details?.files?.find(([f]) => f === 'epub') || details?.files?.find(([f]) => f === 'pdf');
   const other = [...(byType.h || []), ...(byType.t || [])];
   const visibleOther = open ? other : other.slice(0, 10);
   const tagBtn = (t, cls = '') => (
@@ -479,10 +481,11 @@ function FicView({ db, i, onTag, onFolder, extra }) {
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => {
-                  // A plain click on a PDF reads it here; ctrl/cmd/middle click still opens Drive.
-                  if (primary[0] === 'pdf' && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
+                  // A plain click on a fic we can read here opens the reader (an EPUB reflows to the
+                  // screen, so it comes before a PDF); ctrl/cmd/middle click still opens Drive.
+                  if (readable && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
                     e.preventDefault();
-                    openReader({ fileId: primary[1], title: db.t[i], author });
+                    openReader({ fileId: readable[1], kind: readable[0], title: db.t[i], author });
                   }
                 }}
               >
@@ -676,10 +679,10 @@ function VersionRow({ db, n, noun, places, multi, pending, current, onPick }) {
   );
 }
 
-// A PDF opens in the built-in reader; any other format links to the file in Drive.
+// PDFs and EPUBs open in the built-in readers; any other format links to the file in Drive.
 function FileLink({ db, i, f, id, className }) {
   const openReader = useContext(ReaderContext);
-  if (f !== 'pdf') {
+  if (f !== 'pdf' && f !== 'epub') {
     return (
       <a className={className} href={fileUrl(f, id)} target="_blank" rel="noreferrer">
         {fmtLabel(f)}
@@ -688,8 +691,8 @@ function FileLink({ db, i, f, id, className }) {
   }
   const author = db.a[i] >= 0 ? db.authors[db.a[i]] : null;
   return (
-    <button className={`${className} fmt-read`} onClick={() => openReader({ fileId: id, title: db.t[i], author })} title="Read this PDF here">
-      <span aria-hidden>📖</span> Read PDF
+    <button className={`${className} fmt-read`} onClick={() => openReader({ fileId: id, kind: f, title: db.t[i], author })} title={`Read this ${f.toUpperCase()} here`}>
+      <span aria-hidden>📖</span> Read {f.toUpperCase()}
     </button>
   );
 }
@@ -1033,8 +1036,9 @@ function About() {
           unless its text or AO3 work id matches.
         </li>
         <li>
-          Click a PDF to read it right here: search the text, change the reading mode (paper, sepia, night) and
-          pick up where you stopped. The file is streamed from the drive, nothing is stored.
+          Click a fic to read it right here, as an EPUB (resizable text, chapters) or a PDF: search the text, change
+          the reading mode (paper, sepia, night) and pick up where you stopped. The file is streamed from the drive,
+          nothing is stored.
         </li>
         <li>Fics that weren't downloaded from AO3 (renamed files, Google Docs…) have no tags, but you can still find them by title and folder.</li>
       </ul>

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../../api/pdf.js';
+import handler from '../../api/file.js';
 
 const ID = '16bIZb4WIpf6dNNXQEv3ZQE7RlYGHQFIs';
-const req = (id = ID, headers = { 'sec-fetch-site': 'same-origin' }) => new Request(`https://site.test/api/pdf?id=${id}`, { headers });
+const req = (id = ID, headers = { 'sec-fetch-site': 'same-origin' }, kind = 'pdf') => new Request(`https://site.test/api/file?id=${id}&kind=${kind}`, { headers });
 const withUpstream = async (fake, fn) => {
   const real = globalThis.fetch;
   globalThis.fetch = async () => fake;
@@ -43,9 +43,23 @@ test('Google quota / interstitial pages (HTML) are not relayed', async () => {
   assert.equal(res.status, 429);
 });
 
-test('only PDFs: another format is refused', async () => {
-  const res = await withUpstream(new Response(new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0, 0]), { status: 200 }), () => handler(req()));
-  assert.equal(res.status, 415);
+test('only the requested kind: a zip is not a PDF, a PDF is not an EPUB', async () => {
+  const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0, 0]);
+  assert.equal((await withUpstream(new Response(zip, { status: 200 }), () => handler(req()))).status, 415);
+  assert.equal((await withUpstream(new Response(pdfBytes, { status: 200 }), () => handler(req(ID, undefined, 'epub')))).status, 415);
+});
+
+test('relays an EPUB (zip) with its own content type', async () => {
+  const epub = new Uint8Array([0x50, 0x4b, 3, 4, ...new Uint8Array(3000).fill(7)]);
+  const res = await withUpstream(new Response(epub, { status: 200 }), () => handler(req(ID, undefined, 'epub')));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/epub+zip');
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), epub);
+});
+
+test('the kind is required and must be known', async () => {
+  assert.equal((await handler(new Request(`https://site.test/api/file?id=${ID}`, { headers: { 'sec-fetch-site': 'same-origin' } }))).status, 400);
+  assert.equal((await handler(req(ID, undefined, 'exe'))).status, 400);
 });
 
 test('oversized files are refused up front', async () => {

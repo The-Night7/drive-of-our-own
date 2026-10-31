@@ -1,16 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { Readable } from 'node:stream';
-import relay from './api/pdf.js';
+import relay from './api/file.js';
 
-// `vite dev` / `vite preview` don't run Vercel functions: serve the PDF relay from the same code.
+// `vite dev` / `vite preview` don't run Vercel functions: serve the file relay from the same code.
 const localRelay = {
   name: 'local-pdf-relay',
   configureServer: (server) => mount(server.middlewares),
   configurePreviewServer: (server) => mount(server.middlewares),
 };
 function mount(middlewares) {
-  middlewares.use('/api/pdf', async (req, res) => {
+  middlewares.use('/api/file', async (req, res) => {
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
     const out = await relay(new Request(`http://${req.headers.host}${req.originalUrl}`, { headers }));

@@ -9,39 +9,13 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import 'pdfjs-dist/legacy/web/pdf_viewer.css';
 import './reader.css';
+import { THEMES, store, driveUrl, downloadUrl, relayUrl, Progress, Outline, Fallback } from './readerShared.jsx';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-const THEMES = [
-  { key: 'paper', label: 'Paper' },
-  { key: 'sepia', label: 'Sepia' },
-  { key: 'night', label: 'Night' },
-];
 const MAX_PAGE_WIDTH = 980; // "fit width" never goes wider than this on big screens
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 4;
-
-const driveUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
-const downloadUrl = (id) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`; // plain link: works as a download
-const relayUrl = (id) => `${window.location.origin}/api/pdf?id=${id}`;
-const previewUrl = (id) => `https://drive.google.com/file/d/${id}/preview`;
-
-// localStorage can throw (private mode, blocked): the reader must work without it.
-const store = {
-  get(key, fallback) {
-    try {
-      const v = window.localStorage.getItem(key);
-      return v === null ? fallback : JSON.parse(v);
-    } catch {
-      return fallback;
-    }
-  },
-  set(key, value) {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {}
-  },
-};
 
 // Occurrences of `q` in a page's text items. Items are joined with a space, so a phrase split over
 // two lines still matches. Returns, for each occurrence, the first and last item it touches.
@@ -102,7 +76,7 @@ export default function PdfReader({ fileId, title, author, onClose }) {
   // ---------- load the document ----------
   useEffect(() => {
     let cancelled = false;
-    const task = pdfjs.getDocument({ url: relayUrl(fileId), disableRange: true, isEvalSupported: false });
+    const task = pdfjs.getDocument({ url: relayUrl(fileId, 'pdf'), disableRange: true, isEvalSupported: false });
     task.onProgress = ({ loaded, total }) => !cancelled && setLoad((s) => ({ ...s, loaded, total: total || 0 }));
     task.promise
       .then(async (d) => {
@@ -274,6 +248,12 @@ export default function PdfReader({ fileId, title, author, onClose }) {
     };
   }, []);
 
+  // Closing a panel can remove the element that had the focus; without this the keyboard
+  // shortcuts would stop working until the next click.
+  useEffect(() => {
+    if (!document.activeElement || document.activeElement === document.body) rootRef.current?.focus();
+  }, [sidebar, searchOpen]);
+
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     else rootRef.current?.requestFullscreen?.().catch(() => {});
@@ -284,6 +264,7 @@ export default function PdfReader({ fileId, title, author, onClose }) {
     if (e.key === 'Escape') {
       e.preventDefault();
       if (searchOpen) setSearchOpen(false);
+      else if (sidebar) setSidebar(false);
       else onClose();
       return;
     }
@@ -438,7 +419,7 @@ export default function PdfReader({ fileId, title, author, onClose }) {
         )}
 
         {load.status === 'error' ? (
-          <Fallback fileId={fileId} error={load.error} />
+          <Fallback fileId={fileId} error={load.error} kind="pdf" />
         ) : (
           <div className="reader-scroll" ref={scrollRef} onScroll={onScroll}>
             {doc && base && (
@@ -462,60 +443,6 @@ export default function PdfReader({ fileId, title, author, onClose }) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Progress({ loaded, total }) {
-  const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : null;
-  return (
-    <div className="reader-progress" role="progressbar" aria-valuenow={pct ?? undefined} aria-label="Loading">
-      <div className="reader-progress-bar" style={pct === null ? { width: '35%', animation: 'rp 1.1s ease-in-out infinite' } : { width: `${pct}%` }} />
-      <span>{pct === null ? `Loading… ${(loaded / 1048576).toFixed(1)} MB` : `Loading… ${pct}% of ${(total / 1048576).toFixed(1)} MB`}</span>
-    </div>
-  );
-}
-
-function Outline({ items, onOpen, depth = 0 }) {
-  return (
-    <ul className={`outline outline-${Math.min(depth, 3)}`}>
-      {items.map((it, i) => (
-        <li key={i}>
-          <button onClick={() => onOpen(it)}>{it.title}</button>
-          {it.items?.length ? <Outline items={it.items} onOpen={onOpen} depth={depth + 1} /> : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Fallback({ fileId, error }) {
-  const name = error?.name || '';
-  const status = error?.status;
-  // pdf.js turns an HTTP 404 into MissingPDFException (no status), other codes keep theirs.
-  const why =
-    status === 404 || name === 'MissingPDFException'
-      ? "This file isn't public (or no longer exists): Google asks for a sign-in, so it can't be opened here."
-      : status === 429
-        ? "Google's download limit for this file has been reached for now. Try again later."
-        : status === 413
-          ? 'This file is too large for the built-in reader.'
-          : status === 415 || name === 'InvalidPDFException'
-            ? "This file isn't a readable PDF."
-            : "The reader couldn't get this file from Google Drive.";
-  return (
-    <div className="reader-fallback">
-      <div className="reader-fallback-msg">
-        <strong>Can't use the built-in reader for this one.</strong>
-        <span>{why} Google's own viewer is shown below instead, when it can.</span>
-        <span className="reader-fallback-links">
-          <a href={driveUrl(fileId)} target="_blank" rel="noreferrer">
-            Open in Google Drive ↗
-          </a>
-          <a href={downloadUrl(fileId)}>Download</a>
-        </span>
-      </div>
-      <iframe title="Google Drive viewer" src={previewUrl(fileId)} allow="fullscreen" />
     </div>
   );
 }
