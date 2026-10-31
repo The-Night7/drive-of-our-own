@@ -5,7 +5,7 @@ went down. It indexes the community drives, reads each fic's AO3 tags, and lets 
 search by title, author, fandom, ship, character or any tag. Every result links
 **straight to the file in its original drive**. Nothing is copied or re-hosted.
 
-React + Vite, hosted on GitHub Pages. Search runs entirely in the browser.
+React + Vite, hosted on Vercel. Search runs entirely in the browser.
 
 ## Everything runs on its own
 
@@ -28,7 +28,10 @@ A GitHub Actions workflow ([`deploy.yml`](.github/workflows/deploy.yml)) runs ev
    relationships, characters, additional tags, summary, author, word count,
    chapters. Results are cached per file, so each run only reads new files. The
    first pass over a big collection takes a few runs.
-4. **Publishes the site**, with an updated index.
+4. **Publishes the index and redeploys the site.** The index is uploaded as an asset
+   of the `index-data` release, then a Vercel deploy hook is called. The Vercel build
+   (`scripts/fetch-index.mjs`, see [`vercel.json`](vercel.json)) downloads that asset
+   before building the app, so the index never has to live in git.
 
 ### Adding a drive
 
@@ -47,9 +50,14 @@ as *Not public* on the Drives page.
 
 ## One-time setup
 
-**Settings → Pages → Build and deployment → Source: GitHub Actions.** That's it.
-To start the first run right away instead of waiting for the schedule, go to
-**Actions → Index & deploy → Run workflow**.
+1. **Vercel:** import the repo (the framework and build command are picked up from
+   `vercel.json`). Then, in **Project Settings → Git → Deploy Hooks**, create a hook
+   for the `main` branch and copy its URL.
+2. **GitHub:** in **Settings → Secrets and variables → Actions**, add a repository
+   secret named `VERCEL_DEPLOY_HOOK` with that URL. Without it everything still
+   works, but Vercel only shows the new index at its next deploy.
+3. **Actions → Index & deploy → Run workflow** to start the first run now instead of
+   waiting for the schedule.
 
 ## Run it locally
 
@@ -81,6 +89,7 @@ extracts their tags (`scripts/build-index.mjs`). The tag step needs `pdftotext`
 | `data/sources.json` | Extra drives (manual and added via the site) |
 | `scripts/crawl.mjs` | Finds the drives and lists the fics → `data/listing.json` |
 | `scripts/build-index.mjs` | Reads the tags → `public/index.json` + `public/details/*.json` |
+| `scripts/fetch-index.mjs` | Used by the Vercel build: downloads the published index |
 | `scripts/lib/meta.mjs` | The AO3 EPUB/PDF metadata parser |
 | `src/` | The React app |
 

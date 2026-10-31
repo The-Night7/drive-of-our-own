@@ -5,7 +5,8 @@ name: Index & deploy
 #   1. finds the drives (master Drive folder + data/sources.json),
 #   2. re-lists every drive once a day (in between, only newly added drives),
 #   3. downloads new fics and extracts their AO3 tags (cached between runs),
-#   4. builds the site and publishes it on GitHub Pages.
+#   4. publishes the index as a release asset and redeploys the site on Vercel
+#      (the Vercel build downloads it: see scripts/fetch-index.mjs).
 
 on:
   push:
@@ -20,9 +21,7 @@ on:
         default: false
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write # to publish the index release
 
 concurrency:
   group: index
@@ -83,18 +82,23 @@ jobs:
             data/meta-cache
           key: index-${{ github.run_id }}
 
-      - run: npm run build
+      - name: Publish the index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -czf index-bundle.tgz -C public index.json details
+          ls -la index-bundle.tgz
+          gh release view index-data >/dev/null 2>&1 || gh release create index-data \
+            --title "Search index (rebuilt automatically)" \
+            --notes "Built by the Index & deploy workflow and downloaded by the Vercel build. Not meant to be used by hand."
+          gh release upload index-data index-bundle.tgz --clobber
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Redeploy on Vercel
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::No VERCEL_DEPLOY_HOOK secret, so Vercel won't pick up the new index until its next deploy."
+          else
+            curl -fsS -X POST "$HOOK" && echo
+          fi

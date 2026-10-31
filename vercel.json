@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "node scripts/fetch-index.mjs && npm run build",
+  "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/(index.json|details/.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}
