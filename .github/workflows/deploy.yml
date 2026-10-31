@@ -70,7 +70,7 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           # Pushes only need a quick rebuild; scheduled runs chew through the backlog.
-          if [ "$EVENT" = "push" ]; then MIN=15; else MIN=170; fi
+          if [ "$EVENT" = "schedule" ]; then MIN=170; else MIN=1; fi
           node scripts/build-index.mjs --max-minutes $MIN --concurrency 8
 
       - name: Save index cache
