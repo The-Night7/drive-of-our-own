@@ -13,7 +13,7 @@
 import { readFile, writeFile, appendFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getWithRetry, sleep } from './lib/drive.mjs';
+import { getWithRetry, sleep, decode } from './lib/drive.mjs';
 import { parseEpub, parsePdf, pdfAvailable } from './lib/meta.mjs';
 import { expand } from './lib/index-format.mjs';
 
@@ -118,8 +118,19 @@ const TAG_TYPES = [
 const FORMAT_BITS = { pdf: 1, epub: 2, gdoc: 4, mobi: 8, azw3: 8, azw: 8 }; // anything else: 16
 const FORMAT_RANK = ['pdf', 'epub', 'gdoc', 'docx', 'doc', 'html', 'htm', 'txt', 'rtf', 'odt', 'mobi', 'azw3', 'azw', 'fb2'];
 
+// Older cache entries (and Drive file names) may still hold HTML entities like "&amp;amp;": clean them
+// here so the index is always correct, without re-downloading anything.
+const dec = (s) => (typeof s === "string" && s.includes("&") ? decode(s) : s);
+const fixMeta = (m) => {
+  if (!m) return m;
+  const o = { ...m };
+  for (const k of ["title", "author", "summary", "rating"]) if (o[k]) o[k] = dec(o[k]);
+  for (const [field] of TAG_TYPES) if (Array.isArray(o[field])) o[field] = [...new Set(o[field].map(dec))];
+  return o;
+};
+
 function buildIndex(listing, fics, cache) {
-  const metas = fics.map((f) => f.fl.map(([, id]) => cache.get(id)).find((m) => m && !m.x) || null);
+  const metas = fics.map((f) => fixMeta(f.fl.map(([, id]) => cache.get(id)).find((m) => m && !m.x) || null));
 
   const tagCount = new Map();
   const ficKeys = metas.map((m) => {
@@ -171,7 +182,7 @@ function buildIndex(listing, fics, cache) {
       }
     }
     const files = [...f.fl].sort((x, y) => FORMAT_RANK.indexOf(x[0]) - FORMAT_RANK.indexOf(y[0]));
-    cols.t.push(m?.title || f.t);
+    cols.t.push(dec(m?.title || f.t));
     cols.d.push(k);
     cols.g.push(ficKeys[i].map((key) => tagIds.get(key).toString(36)).join('.'));
     cols.a.push(au);
