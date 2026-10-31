@@ -103,13 +103,14 @@ export default function App() {
 
   const filters = useMemo(() => {
     if (!db) return null;
-    const ids = (keys) => keys.map((k) => db.tagIdByKey.get(k)).filter((x) => x !== undefined);
+    // A tag that isn't in the index (yet) matches nothing, rather than being ignored.
+    const ids = (keys, missing) => keys.map((k) => db.tagIdByKey.get(k) ?? missing).filter((x) => x !== undefined);
     return {
       src: new Set(src),
       fmtMask: FORMAT_BITS.filter((b) => fmt.includes(b.key)).reduce((m, b) => m | b.bit, 0),
       folder,
-      inc: ids(inc),
-      exc: ids(exc),
+      inc: ids(inc, -1),
+      exc: ids(exc, undefined),
       done: DONE[done] || 0,
       len,
     };
