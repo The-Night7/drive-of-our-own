@@ -9,8 +9,17 @@ React + Vite, hosted on Vercel. Search runs entirely in the browser.
 
 ## Everything runs on its own
 
-A GitHub Actions workflow ([`deploy.yml`](.github/workflows/deploy.yml)) runs every
-6 hours, on every push and whenever a drive is added. Nobody has to do anything:
+Two GitHub Actions workflows run in parallel (separate concurrency groups, so one
+never waits behind the other). Nobody has to do anything:
+
+- **[Index & deploy](.github/workflows/deploy.yml)** is the slow, thorough one. It runs
+  every 6 hours (or by hand) for up to ~3 hours and does the steps below.
+- **[Quick index](.github/workflows/quick-index.yml)** is the fast lane: a few minutes.
+  It runs on every push and whenever a drive is added through the site. It lists the
+  new drives, rebuilds the index from the tags already cached, and redeploys. Tags for
+  a brand-new drive are filled in by the next slow run.
+
+The steps:
 
 1. **Finds the drives.** It reads the master Drive folder set in
    [`data/config.json`](data/config.json) (“AO3 - Drives”):

@@ -1,16 +1,14 @@
 name: Index & deploy
 
-# Runs on its own: every 6 hours, on every push to main, and when a drive is
-# added through the site's form. Each run:
+# The slow, thorough run: every 6 hours (or by hand), up to ~3 h long.
 #   1. finds the drives (master Drive folder + data/sources.json),
 #   2. re-lists every drive once a day (in between, only newly added drives),
 #   3. downloads new fics and extracts their AO3 tags (cached between runs),
 #   4. publishes the index as a release asset and redeploys the site on Vercel
 #      (the Vercel build downloads it: see scripts/fetch-index.mjs).
+# Pushes and newly added drives are handled by quick-index.yml, in parallel.
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
@@ -66,12 +64,7 @@ jobs:
           fi
 
       - name: Extract tags and build the index
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          # Pushes only need a quick rebuild; scheduled and manual runs chew through the backlog.
-          if [ "$EVENT" = "push" ]; then MIN=1; else MIN=170; fi
-          node scripts/build-index.mjs --max-minutes $MIN --concurrency 8
+        run: node scripts/build-index.mjs --max-minutes 170 --concurrency 8
 
       - name: Save index cache
         if: always()
@@ -82,23 +75,17 @@ jobs:
             data/meta-cache
           key: index-${{ github.run_id }}
 
-      - name: Publish the index
+      # This run can last hours. Drives added meanwhile (they're in data/sources.json on
+      # main, but not in this checkout) are listed now so the published index has them.
+      - name: Pick up drives added during this run
+        run: |
+          git fetch -q origin main
+          git checkout -q origin/main -- data/sources.json data/config.json
+          node scripts/crawl.mjs --max-minutes 10 --if-older-than-hours 20
+          node scripts/build-index.mjs --limit 0
+
+      - name: Publish the index and redeploy
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          tar -czf index-bundle.tgz -C public index.json details
-          ls -la index-bundle.tgz
-          gh release view index-data >/dev/null 2>&1 || gh release create index-data \
-            --title "Search index (rebuilt automatically)" \
-            --notes "Built by the Index & deploy workflow and downloaded by the Vercel build. Not meant to be used by hand."
-          gh release upload index-data index-bundle.tgz --clobber
-
-      - name: Redeploy on Vercel
-        env:
-          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: |
-          if [ -z "$HOOK" ]; then
-            echo "::warning::No VERCEL_DEPLOY_HOOK secret, so Vercel won't pick up the new index until its next deploy."
-          else
-            curl -fsS -X POST "$HOOK" && echo
-          fi
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: scripts/publish-index.sh

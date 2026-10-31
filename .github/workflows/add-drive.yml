@@ -53,7 +53,7 @@ jobs:
         if: steps.add.outputs.status == 'added'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run deploy.yml --ref main --repo "$GITHUB_REPOSITORY"
+        run: gh workflow run quick-index.yml --ref main --repo "$GITHUB_REPOSITORY"
 
       - name: Reply on the issue
         if: always() && steps.add.outputs.status != ''

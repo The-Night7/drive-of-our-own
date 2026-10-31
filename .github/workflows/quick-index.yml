@@ -1,0 +1,62 @@
+name: Quick index
+
+# The fast lane, in parallel with the slow "Index & deploy" run (its own concurrency
+# group, so it never waits behind it). It runs on pushes to main and when a drive is
+# added through the site, and takes a few minutes:
+#   - lists drives added since the last listing (a full re-list if it's over a day old),
+#   - rebuilds the index from the tags already cached (plus ~2 min of new ones),
+#   - publishes it and redeploys the site on Vercel.
+# Tags for brand-new drives are filled in by the next slow run.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write # to publish the index release
+
+concurrency:
+  group: quick-index
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install pdftotext
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
+      # Read-only: this run never saves the cache, so it can't overwrite the tags a
+      # slow run is collecting. The slow run lists any new drive again on its own.
+      - name: Restore index cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/listing.json
+            data/meta-cache
+          key: index-${{ github.run_id }}
+          restore-keys: index-
+
+      - name: List new drives
+        run: node scripts/crawl.mjs --max-minutes 15 --if-older-than-hours 20
+
+      - name: Build the index
+        run: node scripts/build-index.mjs --max-minutes 2 --concurrency 8
+
+      - name: Publish the index and redeploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: scripts/publish-index.sh

@@ -367,7 +367,7 @@ kbd { border: 1px solid var(--line); }
   margin-top: 8px;
 }
 .tagfinder input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-.suggestions { list-style: none; margin: 4px 0 0; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.suggestions { list-style: none; margin: 4px 0 0; padding: 4px; max-height: min(50vh, 360px); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
 .suggestions li { display: flex; }
 .sugg-main { flex: 1; min-width: 0; display: grid; text-align: left; border: 0; background: none; cursor: pointer; padding: 5px 6px; border-radius: 6px; font-size: 13.5px; }
 .sugg-main:hover { background: var(--surface-2); }

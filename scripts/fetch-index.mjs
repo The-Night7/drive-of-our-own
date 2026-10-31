@@ -3,8 +3,11 @@
 // changes too often to live in git, so the GitHub Actions workflow publishes it as
 // a release asset; this downloads it into public/ before `vite build`.
 //
-// Env: INDEX_URL overrides the download URL. If the download fails, the build goes
-// on without data (the site then says the index isn't ready yet).
+// Env: INDEX_URL overrides the download URL. The download is retried a few times
+// (the asset is briefly missing while a workflow replaces it). If it still fails the
+// build fails, so Vercel keeps serving the previous deployment instead of an empty
+// site. Set ALLOW_EMPTY_INDEX=1 to build without data anyway (first deploy, before
+// any workflow has published an index).
 
 import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -17,19 +20,35 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const run = promisify(execFile);
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function download(url) {
+  let last;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const res = await fetch(url, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      last = err;
+      console.warn(`  attempt ${attempt}/5 failed: ${err.message}`);
+      if (attempt < 5) await sleep(attempt * 5000);
+    }
+  }
+  throw last;
+}
+
 async function main() {
   const config = JSON.parse(await readFile(join(ROOT, 'data/config.json'), 'utf8'));
   const url = process.env.INDEX_URL || `https://github.com/${config.repo}/releases/download/index-data/index-bundle.tgz`;
   console.log(`Fetching the search index from ${url}`);
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const buf = await download(url);
   const dir = await mkdtemp(join(tmpdir(), 'index-'));
   try {
     const file = join(dir, 'bundle.tgz');
     await writeFile(file, buf);
     await mkdir(join(ROOT, 'public'), { recursive: true });
- await run('tar', ['-xzf', file, '-C', join(ROOT, 'public')]);
+    await run('tar', ['-xzf', file, '-C', join(ROOT, 'public')]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -38,5 +57,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.warn(`! Could not fetch the search index (${err.message}). Building without it — the first "Index & deploy" run on GitHub will publish one.`);
+  if (process.env.ALLOW_EMPTY_INDEX === '1') {
+    console.warn(`! Could not fetch the search index (${err.message}). Building without it (ALLOW_EMPTY_INDEX=1).`);
+    return;
+  }
+  console.error(`✗ Could not fetch the search index (${err.message}). Failing the build so the previous deployment stays live.`);
+  process.exit(1);
 });
