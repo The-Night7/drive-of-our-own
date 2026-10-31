@@ -91,6 +91,23 @@ extracts their tags (`scripts/build-index.mjs`). The tag step needs `pdftotext`
 - `node scripts/crawl.mjs --only <folderId>` re-lists a single drive.
 - `node scripts/build-index.mjs --limit 500` reads tags for at most 500 new files.
 
+## Reading PDFs in the site
+
+A click on a PDF (the title, or the **Read PDF** button) opens it in a built-in reader
+([`src/PdfReader.jsx`](src/PdfReader.jsx), pdf.js, loaded only when needed):
+
+- continuous scrolling, page jump, zoom (fit width by default), full screen;
+- **search in the text** with highlights (press `/`), contents/outline when the PDF has one;
+- reading modes **paper / sepia / night** (night follows the phone's dark mode the first time);
+- remembers the last page, zoom and mode per fic; the phone's back button closes the reader;
+- download and “open in Google Drive” buttons; keyboard: `←` `→` pages, `+` `-` `0` zoom,
+  `t` mode, `o` contents, `Esc` close.
+
+The file is read **directly from Google Drive by the browser** (its download endpoint is
+open to cross-origin reads), so nothing goes through our server and nothing is re-hosted.
+If Google won't serve a file (private, or over its download quota), the reader says so and
+shows Google's own viewer instead. EPUBs and other formats still link to Drive.
+
 ## Copies of the same fic
 
 The same fic is often in several drives. Each result is one fic; if there are other

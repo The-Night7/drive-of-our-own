@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
 import config from '../data/config.json';
 import {
   prepare,
@@ -15,6 +15,10 @@ import {
 } from './search.js';
 
 const BASE = import.meta.env.BASE_URL;
+
+// The PDF reader (pdf.js, ~1 MB) is only downloaded when someone opens a PDF.
+const PdfReader = lazy(() => import('./PdfReader.jsx'));
+const ReaderContext = createContext(() => {});
 const PAGE = 30;
 const FMT_LABEL = { gdoc: 'Google Doc', htm: 'HTML' };
 const fmtLabel = (f) => FMT_LABEL[f] || f.toUpperCase();
@@ -50,7 +54,7 @@ function writeParams(s) {
   if (s.sort !== 'relevance') p.set('sort', s.sort);
   if (s.view !== 'search') p.set('view', s.view);
   const qs = p.toString();
-  window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  window.history.replaceState(window.history.state, '', qs ? `?${qs}` : window.location.pathname);
 }
 
 export default function App() {
@@ -143,6 +147,23 @@ export default function App() {
     setLen('');
   };
 
+  // The reader is a layer on top of the page: opening it adds a history entry, so the phone's
+  // back button closes it instead of leaving the site.
+  const [reader, setReader] = useState(null);
+  const openReader = useCallback((r) => {
+    window.history.pushState({ reader: true }, '');
+    setReader(r);
+  }, []);
+  const closeReader = useCallback(() => {
+    if (window.history.state?.reader) window.history.back();
+    else setReader(null);
+  }, []);
+  useEffect(() => {
+    const onPop = () => setReader(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const browseDrive = (id) => {
     clearFilters();
     setQ('');
@@ -156,6 +177,7 @@ export default function App() {
   };
 
   return (
+    <ReaderContext.Provider value={openReader}>
     <div className="app">
       <header className="masthead">
         <div className="masthead-inner">
@@ -408,7 +430,14 @@ export default function App() {
         Every fic belongs to its author and stays in the drive it was shared in. This site only links to it.
         Leave kudos and comments when the archive is back. 💛
       </footer>
+
+      {reader && (
+        <Suspense fallback={<div className="reader-boot">Opening the reader…</div>}>
+          <PdfReader {...reader} onClose={closeReader} />
+        </Suspense>
+      )}
     </div>
+    </ReaderContext.Provider>
   );
 }
 
@@ -422,6 +451,7 @@ function tagLabel(key) {
 
 function FicView({ db, i, onTag, onFolder, extra }) {
   const details = useDetailsFor(db, i);
+  const openReader = useContext(ReaderContext);
   const [open, setOpen] = useState(false);
   const folder = db.folders[db.d[i]];
   const source = db.sources[folder[0]];
@@ -444,7 +474,18 @@ function FicView({ db, i, onTag, onFolder, extra }) {
         <div className="card-main">
           <h3 className="card-title">
             {primary ? (
-              <a href={fileUrl(primary[0], primary[1])} target="_blank" rel="noreferrer">
+              <a
+                href={fileUrl(primary[0], primary[1])}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  // A plain click on a PDF reads it here; ctrl/cmd/middle click still opens Drive.
+                  if (primary[0] === 'pdf' && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
+                    e.preventDefault();
+                    openReader({ fileId: primary[1], title: db.t[i], author });
+                  }
+                }}
+              >
                 {db.t[i] || 'Untitled'}
               </a>
             ) : (
@@ -525,9 +566,7 @@ function FicView({ db, i, onTag, onFolder, extra }) {
         </div>
         <div className="card-actions">
           {details?.files?.map(([f, id]) => (
-            <a key={id} className="fmt" href={fileUrl(f, id)} target="_blank" rel="noreferrer">
-              {fmtLabel(f)}
-            </a>
+            <FileLink key={id} db={db} i={i} f={f} id={id} className="fmt" />
           ))}
           <a className="fmt fmt-folder" href={`https://drive.google.com/drive/folders/${folder[1]}`} target="_blank" rel="noreferrer" title="Open the folder in its original drive">
             Folder ↗
@@ -637,6 +676,24 @@ function VersionRow({ db, n, noun, places, multi, pending, current, onPick }) {
   );
 }
 
+// A PDF opens in the built-in reader; any other format links to the file in Drive.
+function FileLink({ db, i, f, id, className }) {
+  const openReader = useContext(ReaderContext);
+  if (f !== 'pdf') {
+    return (
+      <a className={className} href={fileUrl(f, id)} target="_blank" rel="noreferrer">
+        {fmtLabel(f)}
+      </a>
+    );
+  }
+  const author = db.a[i] >= 0 ? db.authors[db.a[i]] : null;
+  return (
+    <button className={`${className} fmt-read`} onClick={() => openReader({ fileId: id, title: db.t[i], author })} title="Read this PDF here">
+      <span aria-hidden>📖</span> Read PDF
+    </button>
+  );
+}
+
 function PlaceRow({ db, e }) {
   const d = useDetailsFor(db, e);
   const folder = db.folders[db.d[e]];
@@ -651,9 +708,7 @@ function PlaceRow({ db, e }) {
       </span>
       <span className="place-links">
         {d?.files?.map(([f, id]) => (
-          <a key={id} className="fmt fmt-small" href={fileUrl(f, id)} target="_blank" rel="noreferrer">
-            {fmtLabel(f)}
-          </a>
+          <FileLink key={id} db={db} i={e} f={f} id={id} className="fmt fmt-small" />
         ))}
         <a className="fmt fmt-small fmt-folder" href={`https://drive.google.com/drive/folders/${folder[1]}`} target="_blank" rel="noreferrer">
           Folder ↗
@@ -976,6 +1031,10 @@ function About() {
           hasn't been compared yet are marked as such. Fics by different
           authors are never grouped, even with the same title, and a copy whose author can't be read isn't grouped
           unless its text or AO3 work id matches.
+        </li>
+        <li>
+          Click a PDF to read it right here: search the text, change the reading mode (paper, sepia, night) and
+          pick up where you stopped. It's read straight from the drive, nothing is copied.
         </li>
         <li>Fics that weren't downloaded from AO3 (renamed files, Google Docs…) have no tags, but you can still find them by title and folder.</li>
       </ul>
