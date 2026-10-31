@@ -133,10 +133,10 @@ const tagSetCache = new Map();
 function tagSet(db, term) {
   if (tagSetCache.has(term)) return tagSetCache.get(term);
   const set = new Set();
-  // Very short words only match whole tags ("au", "f1") to stay fast and precise.
-  const whole = term.length < 3;
+  // Words of 1-2 letters only match as whole words inside a tag ("au", "f1"); longer ones match anywhere in it.
+  const wordRe = term.length < 3 ? new RegExp("(^| )" + escapeRe(term) + "( |$)") : null;
   for (let i = 0; i < db.tagNorm.length; i++) {
-    if (whole ? db.tagNorm[i] === term : db.tagNorm[i].includes(term)) set.add(i);
+    if (wordRe ? wordRe.test(db.tagNorm[i]) : db.tagNorm[i].includes(term)) set.add(i);
   }
   if (tagSetCache.size > 200) tagSetCache.clear();
   tagSetCache.set(term, set);
@@ -180,18 +180,24 @@ export function facets(db, ids) {
   return { tags: byType, src: desc(src), fmt: desc(fmt), folder: desc(folder), done, len };
 }
 
-// Tag suggestions for the "filter by tag" box; tags are already sorted by popularity.
-export function suggestTags(db, text, limit = 10) {
+// Tag suggestions for the "find a tag" box. Every typed word must appear somewhere in the tag
+// (any order, anywhere inside it). Tags starting with the text come first, then tags containing it as
+// a phrase, then the rest; each group keeps popularity order (tags are already sorted that way).
+export function suggestTags(db, text, limit = 40) {
   const t = norm(text);
   if (t.length < 2) return [];
+  const words = t.split(" ");
   const starts = [];
-  const contains = [];
-  for (let i = 0; i < db.tagNorm.length && starts.length < limit; i++) {
+  const phrase = [];
+  const rest = [];
+  for (let i = 0; i < db.tagNorm.length; i++) {
     const nm = db.tagNorm[i];
+    if (!words.every((w) => nm.includes(w))) continue;
     if (nm.startsWith(t)) starts.push(i);
-    else if (contains.length < limit && nm.includes(t)) contains.push(i);
+    else if (nm.includes(t)) phrase.push(i);
+    else rest.push(i);
   }
-  return [...starts, ...contains].slice(0, limit);
+  return [...starts, ...phrase, ...rest].slice(0, limit);
 }
 
 // Lazily loads file links / summaries for the fics on screen, 500 at a time.
