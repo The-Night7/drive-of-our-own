@@ -4,6 +4,13 @@
 
 import { fileIdFromUrl, folderIdFromUrl } from './drive.mjs';
 
+// Format of public/index.json, shared by the builder and by the published asset's name
+// (index-bundle-v<N>.tgz). Bump it whenever the site can't read the old format any more:
+// an older workflow run then publishes under the old name and can't overwrite the new
+// index, and the Vercel build of new code only downloads an index it can read.
+export const INDEX_FORMAT = 3;
+export const bundleName = (v = INDEX_FORMAT) => `index-bundle-v${v}.tgz`;
+
 export function compact(fics) {
   const folders = [];
   const byId = new Map();

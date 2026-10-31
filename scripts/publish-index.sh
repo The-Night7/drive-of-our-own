@@ -4,13 +4,16 @@
 # Env: GH_TOKEN (required), VERCEL_DEPLOY_HOOK (optional).
 set -euo pipefail
 
-tar -czf index-bundle.tgz -C public index.json details
-ls -la index-bundle.tgz
+# The asset name carries the index format, so a run with older code can never overwrite
+# the index of newer code (see INDEX_FORMAT in scripts/lib/index-format.mjs).
+BUNDLE=$(node scripts/bundle-name.mjs)
+tar -czf "$BUNDLE" -C public index.json details
+ls -la "$BUNDLE"
 
 gh release view index-data >/dev/null 2>&1 || gh release create index-data \
   --title "Search index (rebuilt automatically)" \
   --notes "Built by the GitHub Actions workflows and downloaded by the Vercel build. Not meant to be used by hand."
-gh release upload index-data index-bundle.tgz --clobber
+gh release upload index-data "$BUNDLE" --clobber
 
 if [ -z "${VERCEL_DEPLOY_HOOK:-}" ]; then
   echo "::warning::No VERCEL_DEPLOY_HOOK secret, so Vercel won't pick up the new index until its next deploy."

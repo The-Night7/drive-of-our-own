@@ -15,7 +15,7 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getWithRetry, sleep, decode } from './lib/drive.mjs';
 import { parseEpub, parsePdf, pdfAvailable } from './lib/meta.mjs';
-import { expand } from './lib/index-format.mjs';
+import { expand, INDEX_FORMAT } from './lib/index-format.mjs';
 import { groupFics } from './lib/group.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -228,7 +228,7 @@ function buildIndex(listing, fics, cache) {
   });
 
   const index = {
-    v: 3,
+    v: INDEX_FORMAT,
     generated: listing.generated,
     built: new Date().toISOString(),
     count: fics.length,
