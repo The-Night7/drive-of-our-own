@@ -1,7 +1,7 @@
 // In-browser PDF reader (pdf.js). Loaded on demand, only when someone opens a PDF.
 //
-// The file is read straight from Google Drive: its download endpoint answers with
-// `access-control-allow-origin: *`, so no server in between and nothing is re-hosted.
+// The PDF comes through /api/pdf (api/pdf.js), a relay that streams it from Google Drive
+// without storing anything: Google refuses to serve Drive files to a browser's own request.
 // Files Google won't serve (private, or over their download quota) get Drive's own viewer.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -22,7 +22,8 @@ const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 4;
 
 const driveUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
-const downloadUrl = (id) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+const downloadUrl = (id) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`; // plain link: works as a download
+const relayUrl = (id) => `${window.location.origin}/api/pdf?id=${id}`;
 const previewUrl = (id) => `https://drive.google.com/file/d/${id}/preview`;
 
 // localStorage can throw (private mode, blocked): the reader must work without it.
@@ -101,7 +102,7 @@ export default function PdfReader({ fileId, title, author, onClose }) {
   // ---------- load the document ----------
   useEffect(() => {
     let cancelled = false;
-    const task = pdfjs.getDocument({ url: downloadUrl(fileId), disableRange: true, isEvalSupported: false });
+    const task = pdfjs.getDocument({ url: relayUrl(fileId), disableRange: true, isEvalSupported: false });
     task.onProgress = ({ loaded, total }) => !cancelled && setLoad((s) => ({ ...s, loaded, total: total || 0 }));
     task.promise
       .then(async (d) => {
@@ -490,15 +491,23 @@ function Outline({ items, onOpen, depth = 0 }) {
 
 function Fallback({ fileId, error }) {
   const name = error?.name || '';
+  const status = error?.status;
+  // pdf.js turns an HTTP 404 into MissingPDFException (no status), other codes keep theirs.
   const why =
-    name === 'MissingPDFException' || name === 'InvalidPDFException'
-      ? "This file isn't a readable PDF."
-      : "Google didn't let the reader open this file directly. It may be private, or over Google's download limit for now.";
+    status === 404 || name === 'MissingPDFException'
+      ? "This file isn't public (or no longer exists): Google asks for a sign-in, so it can't be opened here."
+      : status === 429
+        ? "Google's download limit for this file has been reached for now. Try again later."
+        : status === 413
+          ? 'This file is too large for the built-in reader.'
+          : status === 415 || name === 'InvalidPDFException'
+            ? "This file isn't a readable PDF."
+            : "The reader couldn't get this file from Google Drive.";
   return (
     <div className="reader-fallback">
       <div className="reader-fallback-msg">
         <strong>Can't use the built-in reader for this one.</strong>
-        <span>{why} Google's own viewer is shown below instead.</span>
+        <span>{why} Google's own viewer is shown below instead, when it can.</span>
         <span className="reader-fallback-links">
           <a href={driveUrl(fileId)} target="_blank" rel="noreferrer">
             Open in Google Drive ↗

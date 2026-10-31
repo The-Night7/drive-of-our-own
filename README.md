@@ -103,10 +103,13 @@ A click on a PDF (the title, or the **Read PDF** button) opens it in a built-in 
 - download and “open in Google Drive” buttons; keyboard: `←` `→` pages, `+` `-` `0` zoom,
   `t` mode, `o` contents, `Esc` close.
 
-The file is read **directly from Google Drive by the browser** (its download endpoint is
-open to cross-origin reads), so nothing goes through our server and nothing is re-hosted.
-If Google won't serve a file (private, or over its download quota), the reader says so and
-shows Google's own viewer instead. EPUBs and other formats still link to Drive.
+Google refuses to serve a Drive file to a browser's own request (403), so the PDF goes
+through a small relay, [`api/pdf.js`](api/pdf.js) (a Vercel Edge Function). It streams the
+file from Drive and stores nothing (`Cache-Control: private`); it only accepts requests
+from the site's own pages, only PDFs, up to 80 MB. It does use Vercel bandwidth: roughly
+the size of each PDF opened. If Google won't serve a file (private, or over its download
+quota), the reader says why and shows Google's own viewer instead. EPUBs and other formats
+still link to Drive.
 
 ## Copies of the same fic
 

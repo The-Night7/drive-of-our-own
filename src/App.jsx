@@ -1034,7 +1034,7 @@ function About() {
         </li>
         <li>
           Click a PDF to read it right here: search the text, change the reading mode (paper, sepia, night) and
-          pick up where you stopped. It's read straight from the drive, nothing is copied.
+          pick up where you stopped. The file is streamed from the drive, nothing is stored.
         </li>
         <li>Fics that weren't downloaded from AO3 (renamed files, Google Docs…) have no tags, but you can still find them by title and folder.</li>
       </ul>
