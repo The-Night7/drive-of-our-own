@@ -26,9 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -44,7 +44,7 @@ jobs:
       # Read-only: this run never saves the cache, so it can't overwrite the tags a
       # slow run is collecting. The slow run lists any new drive again on its own.
       - name: Restore index cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             data/listing.json
