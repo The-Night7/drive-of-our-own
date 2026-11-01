@@ -235,7 +235,7 @@ export default function App() {
               {db ? (
                 <>
                   <span>
-                    <strong>{db.n.toLocaleString('en')}</strong> fics in{' '}
+                    <strong>{db.uniqueCount.toLocaleString('en')}</strong> fics in{' '}
                     <strong>{db.sources.filter((s) => s.count).length}</strong> drives
                   </span>
                   <span className="dot">·</span>

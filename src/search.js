@@ -56,6 +56,7 @@ export function prepare(index) {
   return {
     ...index,
     n,
+    uniqueCount: gOf.reduce((total, group) => total + (group < 0 ? 1 : 0), 0) + index.groups.length,
     gOf,
     rank,
     unchecked: new Set(index.unchecked),
