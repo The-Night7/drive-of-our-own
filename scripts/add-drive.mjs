@@ -6,13 +6,16 @@
 // data/sources.json or was found in the master Drive folder (shortcuts and the links
 // in its Google Docs), so the same drive is never added twice.
 //
-// Env: ISSUE_BODY, AUTHOR_ASSOCIATION, APPROVED ("true" when the "approved" label is on).
-// Prints a result line for the workflow: status=<added|duplicate|invalid|not_public|needs_approval>
+// Env: ISSUE_TITLE, ISSUE_BODY, AUTHOR_ASSOCIATION, APPROVED ("true" when the "approved" label is on).
+// Prints a result line for the workflow:
+//   status=<added|duplicate|missing|invalid|not_public|needs_approval>
+// `missing` = no Drive link anywhere in the issue (the issue stays open: edit it and it runs again).
 
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { folderIdFromUrl, listFolder } from './lib/drive.mjs';
+import { field, tidy, findDriveUrl, plainField } from './lib/issue.mjs';
 import { discover, sourceKey } from './lib/discover.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,20 +23,15 @@ const SOURCES = resolve(ROOT, 'data/sources.json');
 const CONFIG = resolve(ROOT, 'data/config.json');
 const TRUSTED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
-// Issue forms render as "### Label\n\nvalue".
-function field(body, label) {
-  const re = new RegExp(`###\\s*${label}\\s*\\n+([\\s\\S]*?)(?=\\n###|$)`, 'i');
-  const v = (body.match(re) || [])[1]?.trim() || '';
-  return v === '_No response_' ? '' : v;
-}
-const tidy = (s, max) => s.replace(/[\r\n\t]+/g, ' ').replace(/[<>`]/g, '').trim().slice(0, max);
-
 async function out(status, message) {
   console.log(`${status}: ${message}`);
   if (process.env.GITHUB_OUTPUT) {
     await appendFile(process.env.GITHUB_OUTPUT, `status=${status}\nmessage<<EOF\n${message}\nEOF\n`);
   }
 }
+
+// "Add drive: @handle" -> "@handle" (when the title is all that says who shared it).
+const titleCredit = (title) => ((title || '').match(/^\s*add drive\s*:\s*(@\S+)/i) || [])[1] || '';
 
 // Where an already-known drive came from, in words for the reply on the issue.
 function where(origin) {
@@ -59,7 +57,13 @@ async function findKnown(key, sources) {
 
 async function main() {
   const body = process.env.ISSUE_BODY || '';
-  const url = field(body, 'Drive folder link');
+  const url = findDriveUrl(process.env.ISSUE_TITLE, body);
+  if (!url) {
+    return out(
+      'missing',
+      "I couldn't find a Google Drive folder link in this issue. **Edit the issue and paste the link in the description** (it looks like `https://drive.google.com/drive/folders/…`, and the folder must be shared as “Anyone with the link”). I'll pick it up as soon as you save, or when you reopen it."
+    );
+  }
   const id = /^https:\/\/drive\.google\.com\//.test(url) ? folderIdFromUrl(url) : null;
   if (!id) return out('invalid', "That doesn't look like a Google Drive folder link (https://drive.google.com/drive/folders/…).");
 
@@ -80,8 +84,8 @@ async function main() {
 
   sources.push({
     url: `https://drive.google.com/drive/folders/${id}`,
-    credit: tidy(field(body, 'Who shared it'), 80),
-    notes: tidy(field(body, "What's in it"), 200),
+    credit: tidy(field(body, 'Who shared it') || plainField(body, 'Who shared it') || titleCredit(process.env.ISSUE_TITLE), 80),
+    notes: tidy(field(body, "What's in it") || plainField(body, "What's in it"), 200),
     name: tidy(check.title || '', 120) || undefined,
   });
   await writeFile(SOURCES, JSON.stringify(sources, null, 2) + '\n');

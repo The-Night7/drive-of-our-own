@@ -936,13 +936,14 @@ function AddDrive({ db, onBrowse }) {
     const key = valid ? driveKey(url) : null;
     return key && db ? db.sources.find((x) => driveKey(x.url) === key) || null : null;
   }, [db, url, valid]);
+  // A plain issue with everything already written in it (no issue form: forms aren't shown by
+  // every GitHub client, and an empty form issue was ignored). The bot reads the link from the text.
   const issueUrl = () => {
+    const text = (v) => v.trim() || '_No response_';
     const p = new URLSearchParams({
-      template: 'add-drive.yml',
-      title: `Add drive: ${credit || url}`,
-      drive_url: url.trim(),
-      credit: credit.trim(),
-      notes: notes.trim(),
+      title: `Add drive: ${credit.trim() || url.trim()}`,
+      body: `### Drive folder link\n\n${url.trim()}\n\n### Who shared it\n\n${text(credit)}\n\n### What's in it\n\n${text(notes)}\n`,
+      labels: 'add-drive',
     });
     return `https://github.com/${config.repo}/issues/new?${p}`;
   };
@@ -989,9 +990,9 @@ function AddDrive({ db, onBrowse }) {
           Continue on GitHub →
         </button>
         <p className="hint">
-          This opens a pre-filled form on GitHub (you need a free account). Submit it and a bot checks that the drive
-          is public, adds it to the list, and starts indexing it. The folder has to be shared as “Anyone with the
-          link”.
+          This opens a pre-filled issue on GitHub (you need a free account): just press “Submit new issue”. A bot
+          then checks that the drive is public, adds it to the list, and starts indexing it. The folder has to be
+          shared as “Anyone with the link”.
         </p>
       </form>
     </main>

@@ -1,12 +1,14 @@
 name: Add a drive
 
-# Handles the "Add a drive" form on the site (it opens a pre-filled issue).
+# Handles the "Add a drive" page of the site (it opens a pre-filled issue).
 # Issues from the repo owner/collaborators are added straight away; others wait
-# for the owner to put the `approved` label on the issue.
+# for the owner to put the `approved` label on the issue. The Drive link is searched in
+# the issue form's field, then anywhere in the title/text; if there is none the bot says so
+# in a comment, and runs again when the issue is edited or reopened.
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened, edited, reopened, labeled]
 
 permissions:
   contents: write
@@ -20,8 +22,11 @@ concurrency:
 jobs:
   add:
     if: >-
-      contains(github.event.issue.body, '### Drive folder link') &&
-      (github.event.action == 'opened' || github.event.label.name == 'approved')
+      (startsWith(github.event.issue.title, 'Add drive') ||
+       contains(github.event.issue.labels.*.name, 'add-drive') ||
+       contains(github.event.issue.body, '### Drive folder link')) &&
+      github.event.issue.state == 'open' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'approved')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,6 +38,7 @@ jobs:
       - name: Read the issue and update data/sources.json
         id: add
         env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           AUTHOR_ASSOCIATION: ${{ github.event.issue.author_association }}
           APPROVED: ${{ contains(github.event.issue.labels.*.name, 'approved') }}
@@ -60,9 +66,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
+          ACTION: ${{ github.event.action }}
           STATUS: ${{ steps.add.outputs.status }}
           MESSAGE: ${{ steps.add.outputs.message }}
         run: |
+          # Don't repeat "waiting for approval" every time the issue is edited.
+          if [ "$ACTION" = edited ] && [ "$STATUS" = needs_approval ]; then exit 0; fi
           gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE"
           case "$STATUS" in
             added|duplicate) gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed ;;
